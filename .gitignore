@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .wrangler/
+.release-loop/
 .dev.vars
 .env
 *.log
