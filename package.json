@@ -1,0 +1,17 @@
+{
+  "name": "search-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker search/fetch gateway for agents in restricted networks.",
+  "scripts": {
+    "test": "node tests/test-worker.mjs",
+    "test:live": "node tests/live-smoke.mjs",
+    "dev": "npx wrangler dev --local --ip 127.0.0.1 --port 8787",
+    "deploy": "npx wrangler deploy",
+    "dry-run": "npx wrangler deploy --dry-run --outdir dist"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

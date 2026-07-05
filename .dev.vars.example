@@ -1,0 +1,13 @@
+SEARCH_GATEWAY_TOKEN=dev-token
+# Optional provider config for local wrangler dev:
+# SEARXNG_URL=https://your-searxng.example.com
+# SEARXNG_CATEGORIES=general
+# SEARXNG_SAFESEARCH=0
+# BRAVE_SEARCH_API_KEY=
+# SERPER_API_KEY=
+# TAVILY_API_KEY=
+# Optional best-effort in-worker limiter (requires KV binding in real deploy):
+# SEARCH_RATE_LIMIT_PER_MINUTE=60
+# Optional routing defaults:
+# BING_MARKET=en-US
+# DUCKDUCKGO_LANGUAGE=en-US
