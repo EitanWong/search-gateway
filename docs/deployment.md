@@ -52,7 +52,7 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-The source-of-truth Worker config is `wrangler.jsonc`.
+The Worker config is present in both `wrangler.toml` and `wrangler.jsonc`. They intentionally contain the same Worker name, entrypoint, compatibility date, observability, and default vars so older Cloudflare importers can read TOML while newer tooling can read JSONC.
 
 Default values:
 
