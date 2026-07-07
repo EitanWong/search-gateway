@@ -5,3 +5,5 @@ dist/
 .dev.vars
 .env
 *.log
+__pycache__/
+*.pyc

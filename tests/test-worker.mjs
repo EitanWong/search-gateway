@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import worker, { _test } from '../src/index.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const env = {
   SEARCH_GATEWAY_TOKEN: 'dev-token',
@@ -41,11 +46,45 @@ function htmlResponse(html, init = {}) {
   });
 }
 
+function fixtureHtml(name) {
+  return readFileSync(join(__dirname, 'fixtures', 'html', name), 'utf8');
+}
+
+async function fetchFixture(name, body = {}) {
+  mockFetch(async () => htmlResponse(fixtureHtml(name)));
+  const res = await post('/fetch', { url: `https://fixture.test/${name}`, ...body });
+  assert.equal(res.status, 200);
+  return res.json();
+}
+
+function assertIncludesAll(text, snippets) {
+  for (const snippet of snippets) assert.match(text, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+
+function assertExcludesAll(text, snippets) {
+  for (const snippet of snippets) assert.doesNotMatch(text, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+
 function memoryKv() {
   const store = new Map();
   return {
     async get(key) { return store.get(key) || null; },
     async put(key, value) { store.set(key, value); },
+  };
+}
+
+function memoryCache() {
+  const store = new Map();
+  return {
+    default: {
+      async match(request) {
+        const cached = store.get(request.url || String(request));
+        return cached ? cached.clone() : undefined;
+      },
+      async put(request, response) {
+        store.set(request.url || String(request), response.clone());
+      },
+    },
   };
 }
 
@@ -56,7 +95,7 @@ try {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
-    assert.equal(data.service, 'search-gateway');
+    assert.equal(data.service, 'agent-search-gateway');
     assert.deepEqual(data.capabilities.search_strategies, ['fallback', 'aggregate']);
     assert.equal(data.capabilities.canonical_dedupe, true);
     assert.equal('providers' in data, false);
@@ -139,6 +178,88 @@ try {
     assert.equal(_test.normalizeFreshness('bad-value', 'anything'), 'none');
     assert.equal(_test.normalizeLanguage('auto', '最新 AI 新闻'), 'zh-CN');
     assert.equal(_test.normalizeLanguage('auto', 'latest AI news'), 'en-US');
+  }
+
+  // Ranking handles Chinese queries and recency for current web questions.
+  {
+    assert.ok(_test.queryTokens('最新人工智能新闻').includes('人工'));
+    assert.ok(_test.queryTokens('最新人工智能新闻').includes('新闻'));
+    assert.ok(_test.queryTokens('OpenAI 最新模型').includes('openai'));
+    assert.ok(_test.queryTokens('OpenAI 最新模型').includes('最新'));
+
+    const chineseRanked = _test.mergeRankResults([
+      { title: '娱乐八卦新闻', snippet: '明星综艺', url: 'https://noise.test/a', canonical_url: 'https://noise.test/a', provider: 'brave', providers: ['brave'] },
+      { title: '最新人工智能新闻发布', snippet: 'AI 模型进展', url: 'https://ai.test/news', canonical_url: 'https://ai.test/news', provider: 'serper', providers: ['serper'] },
+    ], '最新人工智能新闻', 2, 'none');
+    assert.equal(chineseRanked[0].canonical_url, 'https://ai.test/news');
+
+    for (const value of ['3 days ago', '3天前', '昨天', '2026年1月2日']) {
+      const normalized = _test.normalizeDate(value);
+      assert.notEqual(normalized, value);
+      assert.ok(!Number.isNaN(new Date(normalized).getTime()), `${value} should parse to ISO date`);
+    }
+    assert.equal(_test.normalizeDate(''), '');
+
+    const oldFirst = [
+      { title: 'Agent search gateway', snippet: 'same relevance', url: 'https://old.test/a', canonical_url: 'https://old.test/a', provider: 'brave', providers: ['brave'], published_at: '2020-01-01T00:00:00.000Z' },
+      { title: 'Agent search gateway', snippet: 'same relevance', url: 'https://new.test/a', canonical_url: 'https://new.test/a', provider: 'serper', providers: ['serper'], published_at: new Date().toISOString() },
+    ];
+    assert.equal(_test.mergeRankResults(oldFirst, 'agent search gateway', 2, 'none')[0].canonical_url, 'https://old.test/a');
+    assert.equal(_test.mergeRankResults(oldFirst, 'agent search gateway', 2, 'week')[0].canonical_url, 'https://new.test/a');
+  }
+
+  // Ranking prefers credible/diverse sources over SEO spam and same-domain pileups.
+  {
+    const credibilityRanked = _test.mergeRankResults([
+      { title: 'Hermes Agent docs', snippet: 'official guide', url: 'https://random-blog.example/hermes', canonical_url: 'https://random-blog.example/hermes', provider: 'brave', providers: ['brave'] },
+      { title: 'Hermes Agent docs', snippet: 'official guide', url: 'https://github.com/nousresearch/hermes-agent', canonical_url: 'https://github.com/nousresearch/hermes-agent', provider: 'serper', providers: ['serper'] },
+    ], 'hermes agent docs', 2, 'none');
+    assert.equal(credibilityRanked[0].canonical_url, 'https://github.com/nousresearch/hermes-agent');
+
+    const spamRanked = _test.mergeRankResults([
+      { title: 'Hermes Agent docs download free best ultimate', snippet: 'official guide mirror', url: 'https://free-download-seo.example/hermes-agent', canonical_url: 'https://free-download-seo.example/hermes-agent', provider: 'brave', providers: ['brave'] },
+      { title: 'Hermes Agent docs', snippet: 'official guide', url: 'https://hermes-agent.nousresearch.com/docs', canonical_url: 'https://hermes-agent.nousresearch.com/docs', provider: 'serper', providers: ['serper'] },
+    ], 'hermes agent docs', 2, 'none');
+    assert.equal(spamRanked[0].canonical_url, 'https://hermes-agent.nousresearch.com/docs');
+
+    const falsePositiveRanked = _test.mergeRankResults([
+      { title: 'Policy update', snippet: 'Korea policy', url: 'https://other-news.example/a', canonical_url: 'https://other-news.example/a', provider: 'serper', providers: ['serper'] },
+      { title: 'Seoul policy update', snippet: 'Korea policy', url: 'https://seoul-news.example/a', canonical_url: 'https://seoul-news.example/a', provider: 'brave', providers: ['brave'] },
+    ], 'seoul policy', 2, 'none');
+    assert.equal(falsePositiveRanked[0].canonical_url, 'https://seoul-news.example/a');
+
+    const diverseRanked = _test.mergeRankResults([
+      { title: 'Agent search gateway guide', snippet: 'agent search', url: 'https://same.test/a', canonical_url: 'https://same.test/a', provider: 'brave', providers: ['brave'] },
+      { title: 'Agent search gateway tutorial', snippet: 'agent search', url: 'https://same.test/b', canonical_url: 'https://same.test/b', provider: 'serper', providers: ['serper'] },
+      { title: 'Agent search gateway reference', snippet: 'agent search', url: 'https://same.test/c', canonical_url: 'https://same.test/c', provider: 'tavily', providers: ['tavily'] },
+      { title: 'Agent search gateway overview', snippet: 'agent search', url: 'https://other.test/a', canonical_url: 'https://other.test/a', provider: 'bing', providers: ['bing'] },
+    ], 'agent search gateway', 3, 'none');
+    assert.equal(diverseRanked.length, 3);
+    assert.equal(diverseRanked.some((result) => result.source === 'other.test'), true);
+    assert.ok(diverseRanked.filter((result) => result.source === 'same.test').length <= 2);
+  }
+
+  // Provider consensus is bounded: shared hosts help ties, but weak consensus cannot beat strong relevance.
+  {
+    const hostConsensusRanked = _test.mergeRankResults([
+      { title: 'Agent search guide', snippet: 'agent search', url: 'https://solo.test/a', canonical_url: 'https://solo.test/a', provider: 'brave', providers: ['brave'] },
+      { title: 'Agent search guide', snippet: 'agent search', url: 'https://consensus.test/a', canonical_url: 'https://consensus.test/a', provider: 'serper', providers: ['serper'] },
+      { title: 'Agent search guide', snippet: 'agent search', url: 'https://consensus.test/b', canonical_url: 'https://consensus.test/b', provider: 'tavily', providers: ['tavily'] },
+    ], 'agent search', 3, 'none');
+    assert.equal(hostConsensusRanked[0].source, 'consensus.test');
+
+    const boundedUrlConsensusRanked = _test.mergeRankResults([
+      { title: 'Agent', snippet: '', url: 'https://weak-consensus.test/a', canonical_url: 'https://weak-consensus.test/a', provider: 'brave', providers: ['brave', 'serper', 'tavily', 'duckduckgo', 'bing'] },
+      { title: 'Agent search gateway', snippet: '', url: 'https://strong-relevance.test/a', canonical_url: 'https://strong-relevance.test/a', provider: 'brave', providers: ['brave'] },
+    ], 'agent search gateway', 2, 'none');
+    assert.equal(boundedUrlConsensusRanked[0].canonical_url, 'https://strong-relevance.test/a');
+
+    const boundedCombinedConsensusRanked = _test.mergeRankResults([
+      { title: 'Agent', snippet: '', url: 'https://weak-combined.test/a', canonical_url: 'https://weak-combined.test/a', provider: 'brave', providers: ['brave', 'serper'] },
+      { title: 'Agent', snippet: '', url: 'https://weak-combined.test/b', canonical_url: 'https://weak-combined.test/b', provider: 'tavily', providers: ['tavily', 'bing'] },
+      { title: 'Agent search', snippet: '', url: 'https://strong-two-token.test/a', canonical_url: 'https://strong-two-token.test/a', provider: 'brave', providers: ['brave'] },
+    ], 'agent search gateway', 3, 'none');
+    assert.equal(boundedCombinedConsensusRanked[0].canonical_url, 'https://strong-two-token.test/a');
   }
 
   // aggregate search queries configured providers in parallel, dedupes canonical URLs, and ranks matches.
@@ -530,6 +651,346 @@ try {
     const data = await res.json();
     assert.equal(data.truncated, true);
     assert.ok(['Main Title', 'Deep Section'].includes(data.truncated_section));
+  }
+
+  // /fetch decodes non-UTF-8 Chinese pages using charset from Content-Type.
+  {
+    const ascii = (s) => [...Buffer.from(s, 'ascii')];
+    const gbk = [0xD6, 0xD0, 0xCE, 0xC4, 0xC4, 0xDA, 0xC8, 0xDD, 0xA1, 0xA3]; // 中文内容。
+    const body = Uint8Array.from([
+      ...ascii('<html><head><title>'),
+      0xD6, 0xD0, 0xCE, 0xC4, // 中文
+      ...ascii('</title></head><body><article><p>'),
+      ...gbk,
+      ...ascii('</p></article></body></html>'),
+    ]);
+    mockFetch(async () => new Response(body, { headers: { 'content-type': 'text/html; charset=gbk' } }));
+    const res = await post('/fetch', { url: 'https://example.cn/gbk' });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.title, '中文');
+    assert.match(data.text, /中文内容。/);
+  }
+
+  // /fetch converts simple tables, ordered lists, and blockquotes into useful Markdown.
+  {
+    const html = `<article>
+      <table><tr><th>Name</th><th>Value</th></tr><tr><td>Alpha</td><td>42</td></tr></table>
+      <ol><li>Install</li><li>Run</li></ol>
+      <blockquote><p>Quoted evidence.</p></blockquote>
+    </article>`;
+    mockFetch(async () => htmlResponse(html));
+    const res = await post('/fetch', { url: 'https://example.com/table' });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.match(data.text, /\| Name \| Value \|/);
+    assert.match(data.text, /\| Alpha \| 42 \|/);
+    assert.match(data.text, /^1\. Install/m);
+    assert.match(data.text, /^2\. Run/m);
+    assert.match(data.text, /^> Quoted evidence\./m);
+  }
+
+  // /fetch uses JSON-LD Article metadata when regular meta tags are incomplete.
+  {
+    const html = `<html><head><script type="application/ld+json">{
+      "@context":"https://schema.org",
+      "@type":"NewsArticle",
+      "headline":"JSON-LD Headline",
+      "description":"Structured description",
+      "datePublished":"2026-01-02T03:04:05Z",
+      "dateModified":"2026-01-03T03:04:05Z",
+      "author":{"name":"Structured Author"}
+    }</script></head><body><article><p>Article body.</p></article></body></html>`;
+    mockFetch(async () => htmlResponse(html));
+    const res = await post('/fetch', { url: 'https://example.com/jsonld' });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.title, 'JSON-LD Headline');
+    assert.equal(data.description, 'Structured description');
+    assert.equal(data.author, 'Structured Author');
+    assert.equal(data.published_at, '2026-01-02T03:04:05.000Z');
+    assert.equal(data.modified_at, '2026-01-03T03:04:05.000Z');
+  }
+
+  // /fetch honors safe <base href> for relative Markdown links.
+  {
+    const html = `<html><head><base href="https://docs.example.com/v1/"></head><body><article><p><a href="guide.html">Guide</a></p></article></body></html>`;
+    mockFetch(async () => htmlResponse(html));
+    const res = await post('/fetch', { url: 'https://example.com/page' });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.match(data.text, /\[Guide\]\(https:\/\/docs\.example\.com\/v1\/guide\.html\)/);
+  }
+
+  // /fetch supports offset pagination over extracted text for long pages.
+  {
+    const html = `<article><h1>Long</h1><p>${'Alpha sentence. '.repeat(80)}${'Beta sentence. '.repeat(80)}</p></article>`;
+    mockFetch(async () => htmlResponse(html));
+    const first = await post('/fetch', { url: 'https://example.com/long-pagination', max_chars: 500 });
+    assert.equal(first.status, 200);
+    const firstData = await first.json();
+    assert.equal(firstData.truncated, true);
+    assert.equal(firstData.offset, 0);
+    assert.ok(firstData.total_chars > firstData.char_count);
+    assert.ok(firstData.next_offset > 0);
+
+    mockFetch(async () => htmlResponse(html));
+    const second = await post('/fetch', { url: 'https://example.com/long-pagination', offset: firstData.next_offset, max_chars: 500 });
+    assert.equal(second.status, 200);
+    const secondData = await second.json();
+    assert.equal(secondData.offset, firstData.next_offset);
+    assert.notEqual(secondData.text, firstData.text);
+  }
+
+  // Golden fixtures protect real-world extraction quality without brittle full-text snapshots.
+  {
+    const docs = await fetchFixture('docs-page.html');
+    assert.equal(docs.title, 'SDK Installation Guide');
+    assert.equal(docs.description, 'Install and configure the SDK.');
+    assert.equal(docs.canonical_url, 'https://docs.example.com/sdk/install');
+    assertIncludesAll(docs.text, [
+      '# SDK Installation Guide',
+      'This guide explains how to install the SDK and authenticate requests.',
+      '1. Install the package.',
+      '2. Create an API token.',
+      '[API reference](https://docs.example.com/sdk/reference.html)',
+      '```\nnpm install example-sdk\n```',
+    ]);
+    assertExcludesAll(docs.text, ['Products Pricing Login', 'Copyright Newsletter Social links']);
+
+    const news = await fetchFixture('news-jsonld.html');
+    assert.equal(news.title, 'Central Bank Signals Rate Path');
+    assert.equal(news.description, 'Policy makers signaled a gradual path for rates.');
+    assert.equal(news.author, 'Ava Reporter, Noah Analyst');
+    assert.equal(news.site_name, 'Example Daily');
+    assert.equal(news.published_at, '2026-02-10T09:30:00.000Z');
+    assert.equal(news.modified_at, '2026-02-10T10:00:00.000Z');
+    assertIncludesAll(news.text, [
+      '# Central Bank Signals Rate Path',
+      'Policy makers said inflation progress remains uneven',
+      '> We will remain data dependent.',
+      'Investors focused on the updated dot plot',
+    ]);
+    assertExcludesAll(news.text, ['Related stories', 'Subscribe now', 'Advertisement']);
+
+    const table = await fetchFixture('table-heavy.html');
+    assertIncludesAll(table.text, [
+      '| Plan | Requests | Support |',
+      '| Free | 1,000 | Community |',
+      '| Pro | 100,000 | Email |',
+      'Choose the plan that matches production traffic.',
+    ]);
+
+    const cookie = await fetchFixture('cookie-noise.html');
+    assertIncludesAll(cookie.text, [
+      '# Research Note',
+      'The primary finding is that retrieval quality improves',
+      'Evaluation should focus on included evidence and excluded boilerplate.',
+    ]);
+    assertExcludesAll(cookie.text, ['We use cookies', 'Subscribe to unlock', 'Newsletter Terms Privacy']);
+
+    const spa = await fetchFixture('spa-shell.html');
+    assert.equal(spa.is_dynamic, true);
+    assert.match(spa.hint, /JS-rendered/);
+  }
+
+  // /fetch returns machine-actionable errors for agent recovery.
+  {
+    mockFetch(async () => new Response('%PDF-1.7', { status: 200, headers: { 'content-type': 'application/pdf' } }));
+    const pdf = await post('/fetch', { url: 'https://example.com/doc.pdf' });
+    assert.equal(pdf.status, 415);
+    const pdfData = await pdf.json();
+    assert.match(pdfData.request_id, /^gw_[a-f0-9-]{8,}/);
+    assert.equal(pdfData.error_code, 'UNSUPPORTED_CONTENT_TYPE');
+    assert.equal(pdfData.suggested_action, 'use_pdf_pipeline');
+
+    mockFetch(async () => { throw new Error('fetch should not be called'); });
+    const blocked = await post('/fetch', { url: 'http://127.0.0.1/admin' });
+    assert.equal(blocked.status, 400);
+    const blockedData = await blocked.json();
+    assert.equal(blockedData.error_code, 'BLOCKED_URL');
+    assert.equal(blockedData.suggested_action, 'choose_public_http_url');
+  }
+
+  // /fetch supports additive response modes so callers can request less payload.
+  {
+    mockFetch(async () => htmlResponse('<html><head><meta name="description" content="Mode description"></head><body><article><h1>Mode Title</h1><p>Mode body text.</p></article></body></html>'));
+    const metadata = await post('/fetch', { url: 'https://example.com/mode', mode: 'metadata' });
+    assert.equal(metadata.status, 200);
+    const metadataData = await metadata.json();
+    assert.equal(metadataData.mode, 'metadata');
+    assert.equal(metadataData.title, 'Mode Title');
+    assert.equal(metadataData.description, 'Mode description');
+    assert.equal('text' in metadataData, false);
+    assert.equal('char_count' in metadataData, false);
+
+    mockFetch(async () => htmlResponse('<article><h1>Mode Title</h1><p>Mode body text.</p></article>'));
+    const text = await post('/fetch', { url: 'https://example.com/mode-text', mode: 'text' });
+    assert.equal(text.status, 200);
+    const textData = await text.json();
+    assert.equal(textData.mode, 'text');
+    assert.match(textData.text, /Mode body text/);
+    assert.equal('title' in textData, false);
+    assert.equal('description' in textData, false);
+
+    mockFetch(async () => htmlResponse(`<article>
+      <h1>Chunk Article</h1>
+      <p>Intro paragraph for chunk mode.</p>
+      <h2>Evidence</h2>
+      <p>${'Evidence sentence. '.repeat(30)}</p>
+      <h2>Conclusion</h2>
+      <p>Final paragraph.</p>
+    </article>`));
+    const chunks = await post('/fetch', { url: 'https://example.com/mode-chunks', mode: 'chunks', chunk_chars: 260 });
+    assert.equal(chunks.status, 200);
+    const chunksData = await chunks.json();
+    assert.equal(chunksData.mode, 'chunks');
+    assert.equal(chunksData.title, 'Chunk Article');
+    assert.equal('text' in chunksData, false);
+    assert.ok(chunksData.chunk_count >= 2, JSON.stringify(chunksData));
+    assert.equal(chunksData.chunks[0].index, 0);
+    assert.equal(chunksData.chunks[0].heading, 'Chunk Article');
+    assert.match(chunksData.chunks[0].text, /Intro paragraph/);
+    assert.ok(chunksData.chunks.some((chunk) => chunk.heading === 'Evidence' && /Evidence sentence/.test(chunk.text)));
+    assert.ok(chunksData.chunks.every((chunk) => Number.isInteger(chunk.offset) && chunk.char_count === chunk.text.length));
+
+    const bad = await post('/fetch', { url: 'https://example.com/mode-bad', mode: 'embedding' });
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error, /unsupported fetch mode/);
+  }
+
+  // /fetch caches extracted results when Cache API is available; tests use an in-memory Cache API shim.
+  {
+    const originalCaches = globalThis.caches;
+    globalThis.caches = memoryCache();
+    let fetchCount = 0;
+    mockFetch(async () => {
+      fetchCount += 1;
+      return htmlResponse('<article><h1>Cached Page</h1><p>Cache body.</p></article>');
+    });
+    try {
+      const first = await post('/fetch', { url: 'https://example.com/cache', cache_ttl: 120 });
+      assert.equal(first.status, 200);
+      const firstData = await first.json();
+      assert.equal(firstData.cache, 'miss');
+      assert.equal(firstData.title, 'Cached Page');
+
+      const second = await post('/fetch', { url: 'https://example.com/cache', cache_ttl: 120 });
+      assert.equal(second.status, 200);
+      const secondData = await second.json();
+      const chunked = await post('/fetch', { url: 'https://example.com/cache', mode: 'chunks', cache_ttl: 120 });
+      assert.equal(chunked.status, 200);
+      const chunkedData = await chunked.json();
+      assert.equal(chunkedData.cache, 'hit');
+      assert.equal(chunkedData.mode, 'chunks');
+      assert.equal(chunkedData.chunks[0].heading, 'Cached Page');
+      assert.equal(fetchCount, 1);
+    } finally {
+      if (originalCaches === undefined) delete globalThis.caches;
+      else globalThis.caches = originalCaches;
+    }
+  }
+
+  // /batch_fetch lets agents fetch many URLs in one tool call; failures stay per-item.
+  {
+    const seen = [];
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      seen.push(url);
+      if (url === 'https://batch.test/a') return htmlResponse('<article><h1>A Title</h1><p>A body.</p></article>');
+      if (url === 'https://batch.test/b') return htmlResponse('<article><h1>B Title</h1><p>B body.</p></article>');
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const res = await post('/batch_fetch', {
+      requests: [
+        { url: 'https://batch.test/a', mode: 'metadata' },
+        { url: 'http://127.0.0.1/private', mode: 'metadata' },
+        { url: 'https://batch.test/b', mode: 'chunks', chunk_chars: 600 },
+      ],
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.match(data.request_id, /^gw_[a-f0-9-]{8,}/);
+    assert.equal(data.ok, true);
+    assert.equal(data.count, 3);
+    assert.equal(data.success_count, 2);
+    assert.equal(data.failed_count, 1);
+    assert.deepEqual(seen.sort(), ['https://batch.test/a', 'https://batch.test/b']);
+    assert.equal(data.results[0].title, 'A Title');
+    assert.equal(data.results[0].mode, 'metadata');
+    assert.equal('text' in data.results[0], false);
+    assert.equal(data.results[1].ok, false);
+    assert.equal(data.results[1].error_code, 'BLOCKED_URL');
+    assert.equal(data.results[1].index, 1);
+    assert.equal(data.results[2].mode, 'chunks');
+    assert.equal(data.results[2].chunks[0].heading, 'B Title');
+  }
+
+  // /batch_fetch accepts ten long-but-valid URLs without tripping the generic 16KB JSON body cap.
+  {
+    let fetchCount = 0;
+    mockFetch(async () => {
+      fetchCount += 1;
+      return htmlResponse('<article><h1>Long URL</h1><p>ok</p></article>');
+    });
+    const requests = Array.from({ length: 10 }, (_, i) => ({
+      url: `https://long-url.test/${i}/${'x'.repeat(1800)}`,
+      mode: 'metadata',
+    }));
+    const res = await post('/batch_fetch', { requests });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.success_count, 10);
+    assert.equal(fetchCount, 10);
+  }
+
+  // /batch_fetch surfaces an all-failed batch at the HTTP/top-level layer while preserving per-item causes.
+  {
+    mockFetch(async () => { throw new Error('fetch should not be called'); });
+    const res = await post('/batch_fetch', { requests: [
+      { url: 'http://127.0.0.1/a', mode: 'metadata' },
+      { url: 'http://localhost/b', mode: 'metadata' },
+    ] });
+    assert.equal(res.status, 502);
+    const data = await res.json();
+    assert.equal(data.ok, false);
+    assert.equal(data.error_code, 'FETCH_FAILED');
+    assert.equal(data.success_count, 0);
+    assert.equal(data.failed_count, 2);
+    assert.deepEqual(data.results.map((item) => item.error_code), ['BLOCKED_URL', 'BLOCKED_URL']);
+  }
+
+  // /search_fetch compresses search -> fetch-top-N into one Agent-native call.
+  {
+    const seenFetches = [];
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) {
+        return jsonResponse({ web: { results: [
+          { title: 'First source', url: 'https://source.test/one', description: 'agent native source one' },
+          { title: 'Second source', url: 'https://source.test/two', description: 'agent native source two' },
+          { title: 'Third source', url: 'https://source.test/three', description: 'should not be fetched' },
+        ] } });
+      }
+      seenFetches.push(url);
+      return htmlResponse(`<article><h1>${url.endsWith('/one') ? 'One' : 'Two'}</h1><p>${url} body</p></article>`);
+    });
+    const res = await post('/search_fetch', {
+      query: 'agent native web research',
+      provider: 'brave',
+      limit: 3,
+      fetch_top: 2,
+      fetch_mode: 'metadata',
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.search.count, 3);
+    assert.equal(data.fetch_top, 2);
+    assert.equal(data.fetched.success_count, 2);
+    assert.deepEqual(seenFetches.sort(), ['https://source.test/one', 'https://source.test/two']);
+    assert.equal(data.fetched.results[0].mode, 'metadata');
+    assert.equal(data.fetched.results[0].title, 'One');
   }
 
   // /fetch does not reflect private canonical or markdown link URLs.

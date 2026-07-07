@@ -1,0 +1,299 @@
+[
+  {
+    "name": "official hermes sources outrank generic blog",
+    "query": "Hermes Agent Nous Research",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["github.com", "hermes-agent.nousresearch.com"],
+    "must_include_domains_top3": ["github.com", "hermes-agent.nousresearch.com"],
+    "avoid_domains_top3": ["free-download-seo.example"],
+    "responses": [
+      { "title": "Hermes Agent docs download free best ultimate", "url": "https://free-download-seo.example/hermes-agent", "description": "Unofficial mirror and SEO bait" },
+      { "title": "Personal blog about Hermes Agent", "url": "https://random-blog.example/hermes", "description": "Hermes Agent overview by a random blog" },
+      { "title": "Hermes Agent | Nous Research", "url": "https://hermes-agent.nousresearch.com/docs", "description": "Official Hermes Agent documentation" },
+      { "title": "GitHub - NousResearch/hermes-agent", "url": "https://github.com/nousresearch/hermes-agent", "description": "Official source repository for Hermes Agent" }
+    ]
+  },
+  {
+    "name": "Chinese AI news keeps CJK relevance",
+    "query": "最新人工智能新闻",
+    "limit": 5,
+    "freshness": "auto",
+    "language": "auto",
+    "top_domain_one_of": ["ai.example.cn", "news.example.cn"],
+    "must_include_domains_top3": ["ai.example.cn"],
+    "avoid_domains_top3": ["entertainment.example.cn"],
+    "responses": [
+      { "title": "娱乐八卦新闻", "url": "https://entertainment.example.cn/a", "description": "明星综艺热点" },
+      { "title": "最新人工智能新闻：模型与产业进展", "url": "https://ai.example.cn/news", "description": "人工智能 模型 新闻 产业", "age": "2天前" },
+      { "title": "人工智能最新政策动态", "url": "https://policy.example.cn/ai", "description": "人工智能 新闻 政策", "age": "1天前" },
+      { "title": "最新人工智能行业观察", "url": "https://news.example.cn/ai", "description": "最新 AI 新闻", "age": "3天前" }
+    ]
+  },
+  {
+    "name": "freshness lifts recent on-topic result",
+    "query": "latest model release news",
+    "limit": 5,
+    "freshness": "week",
+    "language": "auto",
+    "top_domain_one_of": ["fresh.example.com"],
+    "must_include_domains_top3": ["fresh.example.com"],
+    "responses": [
+      { "title": "Latest model release news", "url": "https://old.example.com/model", "description": "model release news", "age": "2 years ago" },
+      { "title": "Latest model release news", "url": "https://fresh.example.com/model", "description": "model release news", "age": "2 days ago" }
+    ]
+  },
+  {
+    "name": "domain diversity prevents same host pileup",
+    "query": "agent search gateway guide",
+    "limit": 4,
+    "freshness": "none",
+    "language": "auto",
+    "must_include_domains_top3": ["other.example.com"],
+    "max_same_domain_top3": 2,
+    "responses": [
+      { "title": "Agent search gateway guide", "url": "https://same.example.com/a", "description": "agent search gateway" },
+      { "title": "Agent search gateway tutorial", "url": "https://same.example.com/b", "description": "agent search gateway" },
+      { "title": "Agent search gateway reference", "url": "https://same.example.com/c", "description": "agent search gateway" },
+      { "title": "Agent search gateway overview", "url": "https://other.example.com/a", "description": "agent search gateway" }
+    ]
+  },
+  {
+    "name": "Seoul is not spam-demoted by seo token",
+    "query": "seoul policy update",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["seoul-news.example"],
+    "responses": [
+      { "title": "Policy update", "url": "https://other-news.example/a", "description": "Korea policy" },
+      { "title": "Seoul policy update", "url": "https://seoul-news.example/a", "description": "Korea policy" }
+    ]
+  },
+  {
+    "name": "Cloudflare Worker errors prefer developer docs",
+    "query": "Cloudflare Worker 1101 error",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["developers.cloudflare.com"],
+    "must_include_domains_top3": ["developers.cloudflare.com"],
+    "responses": [
+      { "title": "Cloudflare Worker 1101 error fixed free", "url": "https://seo-fix.example/cloudflare-1101", "description": "random troubleshooting" },
+      { "title": "Cloudflare Workers 1101 error", "url": "https://developers.cloudflare.com/workers/observability/errors/", "description": "Official developer documentation for Worker errors" },
+      { "title": "Forum discussion Cloudflare 1101", "url": "https://community.example.com/cloudflare-1101", "description": "community notes" }
+    ]
+  },
+  {
+    "name": "open source project query prefers source repository",
+    "query": "Playwright GitHub browser automation",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["github.com"],
+    "must_include_domains_top3": ["github.com"],
+    "responses": [
+      { "title": "Playwright browser automation tutorial", "url": "https://tutorial.example/playwright", "description": "browser automation guide" },
+      { "title": "GitHub - microsoft/playwright: browser automation", "url": "https://github.com/microsoft/playwright", "description": "GitHub Playwright browser automation source repository" },
+      { "title": "Playwright docs", "url": "https://playwright.dev/docs/intro", "description": "official documentation" }
+    ]
+  },
+  {
+    "name": "government policy query prefers official gov source",
+    "query": "US SEC climate disclosure rule",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["sec.gov"],
+    "must_include_domains_top3": ["sec.gov"],
+    "responses": [
+      { "title": "SEC climate disclosure rule explained", "url": "https://analysis-blog.example/sec-climate", "description": "summary and opinion" },
+      { "title": "SEC Climate Disclosure Rule", "url": "https://www.sec.gov/rules/climate-disclosure", "description": "Official SEC climate disclosure rule" },
+      { "title": "Climate disclosure rule news", "url": "https://news.example/sec-climate", "description": "news report" }
+    ]
+  },
+  {
+    "name": "education query surfaces university source",
+    "query": "machine learning course syllabus",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "must_include_domains_top3": ["cs.stanford.edu"],
+    "responses": [
+      { "title": "Machine learning course syllabus", "url": "https://course-notes.example/ml-syllabus", "description": "copied syllabus" },
+      { "title": "Machine learning course syllabus", "url": "https://cs.stanford.edu/courses/ml-syllabus", "description": "university machine learning course syllabus" },
+      { "title": "ML course outline", "url": "https://blog.example/ml-course", "description": "blog outline" }
+    ]
+  },
+  {
+    "name": "medical query prefers public health source over blog",
+    "query": "diabetes treatment guidelines",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "must_include_domains_top3": ["cdc.gov"],
+    "responses": [
+      { "title": "Diabetes treatment guidelines", "url": "https://wellness-blog.example/diabetes", "description": "personal advice" },
+      { "title": "Diabetes treatment guidelines", "url": "https://www.cdc.gov/diabetes/treatment-guidelines", "description": "public health diabetes treatment guidelines" },
+      { "title": "Diabetes care tips", "url": "https://tips.example/diabetes", "description": "general tips" }
+    ]
+  },
+  {
+    "name": "Chinese housing policy prefers local gov source",
+    "query": "杭州购房政策 最新",
+    "limit": 5,
+    "freshness": "auto",
+    "language": "auto",
+    "must_include_domains_top3": ["hangzhou.gov.cn"],
+    "responses": [
+      { "title": "杭州楼市 最新传闻", "url": "https://estate-rumor.example.cn/hz", "description": "中介小道消息", "age": "1天前" },
+      { "title": "杭州购房政策 最新通知", "url": "https://www.hangzhou.gov.cn/house-policy", "description": "杭州市 官方 购房 政策 通知", "age": "2天前" },
+      { "title": "杭州购房政策 官方解读", "url": "https://housing.example.cn/hangzhou-policy", "description": "杭州 购房 政策 官方 解读", "age": "2天前" },
+      { "title": "杭州楼市观察", "url": "https://news.example.cn/hangzhou-house", "description": "杭州 购房 政策 新闻", "age": "3天前" }
+    ]
+  },
+  {
+    "name": "product pricing query prefers official pricing page",
+    "query": "Notion pricing plans",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["notion.so"],
+    "avoid_domains_top3": ["coupon.example"],
+    "responses": [
+      { "title": "Notion pricing plans coupon", "url": "https://coupon.example/notion", "description": "discount coupon" },
+      { "title": "Notion Pricing Plans", "url": "https://www.notion.so/pricing", "description": "official Notion pricing plans" },
+      { "title": "Notion pricing review", "url": "https://review.example/notion-pricing", "description": "pricing review" },
+      { "title": "Notion plans comparison", "url": "https://saas-pricing.example/notion", "description": "Notion pricing plans comparison" }
+    ]
+  },
+  {
+    "name": "release notes query prefers official release source",
+    "query": "Node.js 22 release notes",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["nodejs.org"],
+    "must_include_domains_top3": ["nodejs.org"],
+    "responses": [
+      { "title": "Node.js 22 release notes download free", "url": "https://free-download.example/node22", "description": "download mirror" },
+      { "title": "Node.js 22 release notes", "url": "https://nodejs.org/en/blog/release/v22", "description": "official Node.js 22 release notes" },
+      { "title": "Node 22 features", "url": "https://devblog.example/node22", "description": "feature summary" }
+    ]
+  },
+  {
+    "name": "API docs query surfaces official docs",
+    "query": "OpenAI API responses documentation",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["platform.openai.com"],
+    "must_include_domains_top3": ["platform.openai.com"],
+    "responses": [
+      { "title": "OpenAI API responses documentation", "url": "https://copydocs.example/openai-responses", "description": "copied docs" },
+      { "title": "OpenAI API Responses documentation", "url": "https://platform.openai.com/docs/api-reference/responses", "description": "official OpenAI API documentation" },
+      { "title": "OpenAI responses guide", "url": "https://blog.example/openai-responses", "description": "tutorial" }
+    ]
+  },
+  {
+    "name": "finance news freshness prefers recent source",
+    "query": "latest Federal Reserve rate decision news",
+    "limit": 5,
+    "freshness": "week",
+    "language": "auto",
+    "top_domain_one_of": ["federalreserve.gov", "fresh-finance.example"],
+    "must_include_domains_top3": ["federalreserve.gov"],
+    "responses": [
+      { "title": "Federal Reserve rate decision analysis", "url": "https://old-finance.example/fed", "description": "Federal Reserve rate decision news", "age": "1 year ago" },
+      { "title": "Federal Reserve rate decision news", "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary.htm", "description": "official Federal Reserve rate decision", "age": "2 days ago" },
+      { "title": "Federal Reserve rate decision analysis", "url": "https://fresh-finance.example/fed", "description": "recent Federal Reserve rate decision news", "age": "1 day ago" }
+    ]
+  },
+  {
+    "name": "coupon spam does not beat official pricing",
+    "query": "Spotify premium pricing",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["spotify.com"],
+    "avoid_domains_top3": ["coupon.example"],
+    "responses": [
+      { "title": "Spotify premium pricing coupon", "url": "https://coupon.example/spotify", "description": "coupon discount" },
+      { "title": "Spotify Premium Pricing", "url": "https://www.spotify.com/premium/", "description": "official Spotify premium pricing" },
+      { "title": "Spotify premium review", "url": "https://music-review.example/spotify", "description": "review" },
+      { "title": "Spotify premium pricing comparison", "url": "https://streaming-pricing.example/spotify", "description": "Spotify premium pricing comparison" },
+      { "title": "Spotify premium pricing plans", "url": "https://plans.example/spotify", "description": "Spotify premium pricing plans" }
+    ]
+  },
+  {
+    "name": "crackdown news is not spam-demoted by crack token",
+    "query": "tech crackdown news",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["policy-news.example"],
+    "responses": [
+      { "title": "Tech policy news", "url": "https://generic-news.example/tech-policy", "description": "policy news" },
+      { "title": "Tech crackdown news", "url": "https://policy-news.example/tech-crackdown", "description": "technology crackdown news" }
+    ]
+  },
+  {
+    "name": "torrent-like weather word is not spam-demoted",
+    "query": "torrential rain warning",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["weather-news.example"],
+    "responses": [
+      { "title": "Rain warning", "url": "https://generic-weather.example/rain", "description": "weather warning" },
+      { "title": "Torrential rain warning", "url": "https://weather-news.example/torrential-rain", "description": "torrential rain warning" }
+    ]
+  },
+  {
+    "name": "multi-source news keeps domain diversity",
+    "query": "AI regulation news analysis",
+    "limit": 5,
+    "freshness": "month",
+    "language": "auto",
+    "must_include_domains_top3": ["source-b.example"],
+    "max_same_domain_top3": 2,
+    "responses": [
+      { "title": "AI regulation news analysis", "url": "https://source-a.example/a", "description": "AI regulation news", "age": "2 days ago" },
+      { "title": "AI regulation analysis", "url": "https://source-a.example/b", "description": "AI regulation news", "age": "3 days ago" },
+      { "title": "AI regulation latest", "url": "https://source-a.example/c", "description": "AI regulation news", "age": "4 days ago" },
+      { "title": "AI regulation news analysis", "url": "https://source-b.example/a", "description": "AI regulation news", "age": "2 days ago" },
+      { "title": "AI regulation overview", "url": "https://source-c.example/a", "description": "AI regulation", "age": "5 days ago" }
+    ]
+  },
+  {
+    "name": "Chinese mixed English query keeps entity relevance",
+    "query": "Claude Code 最新 功能",
+    "limit": 5,
+    "freshness": "auto",
+    "language": "auto",
+    "top_domain_one_of": ["docs.anthropic.com", "github.com"],
+    "must_include_domains_top3": ["docs.anthropic.com"],
+    "responses": [
+      { "title": "代码工具 最新 功能", "url": "https://generic-cn.example/claude-code", "description": "泛泛而谈", "age": "1天前" },
+      { "title": "Claude Code 最新 功能 文档", "url": "https://docs.anthropic.com/claude-code", "description": "Claude Code official docs features", "age": "2天前" },
+      { "title": "GitHub Claude Code examples", "url": "https://github.com/anthropics/claude-code-examples", "description": "Claude Code examples", "age": "3天前" }
+    ]
+  },
+  {
+    "name": "software download spam is demoted",
+    "query": "Python install documentation",
+    "limit": 5,
+    "freshness": "none",
+    "language": "auto",
+    "top_domain_one_of": ["docs.python.org"],
+    "avoid_domains_top3": ["download-free.example"],
+    "responses": [
+      { "title": "Python install documentation download free", "url": "https://download-free.example/python", "description": "download mirror" },
+      { "title": "Python install documentation", "url": "https://docs.python.org/3/using/", "description": "official Python install documentation" },
+      { "title": "Python install guide", "url": "https://guide.example/python-install", "description": "guide" },
+      { "title": "Python install documentation tutorial", "url": "https://tutorial.example/python-install", "description": "Python install documentation tutorial" },
+      { "title": "Python documentation install reference", "url": "https://reference.example/python-install", "description": "Python documentation install reference" }
+    ]
+  }
+]

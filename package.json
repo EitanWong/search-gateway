@@ -1,12 +1,27 @@
 {
-  "name": "search-gateway",
+  "name": "agent-search-gateway",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
-  "description": "Cloudflare Worker search/fetch gateway for agents in restricted networks.",
+  "description": "Cloudflare Worker search/fetch gateway for AI agents in restricted networks.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "cloudflare-worker",
+    "search",
+    "web-fetch",
+    "ai-agent",
+    "hermes-agent"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "check": "node --check src/index.js && node --check tests/test-worker.mjs && node --check tests/search-quality-eval.mjs && node --check tests/search-ranking-diff.mjs",
     "test": "node tests/test-worker.mjs",
+    "test:search-quality": "node tests/search-quality-eval.mjs",
+    "ranking:diff": "node tests/search-ranking-diff.mjs",
     "test:live": "node tests/live-smoke.mjs",
+    "test:ci": "npm run check && npm test && npm run test:search-quality && python3 tests/test-plugin.py && python3 -m py_compile tests/test-plugin.py && npm run dry-run",
     "dev": "npx wrangler dev --local --ip 127.0.0.1 --port 8787",
     "deploy": "npx wrangler deploy",
     "dry-run": "npx wrangler deploy --dry-run --outdir dist"
