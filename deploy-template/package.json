@@ -1,0 +1,14 @@
+{
+  "name": "search-gateway-worker-template",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-config Cloudflare Worker search/fetch gateway template.",
+  "scripts": {
+    "build": "node --check src/index.js",
+    "deploy": "npx wrangler deploy",
+    "dry-run": "npx wrangler deploy --dry-run --outdir dist"
+  },
+  "devDependencies": {
+    "wrangler": "^4.107.0"
+  }
+}

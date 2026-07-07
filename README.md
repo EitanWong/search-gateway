@@ -2,7 +2,7 @@
 
 Cloudflare Worker search/fetch gateway for agents running in restricted networks.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway.git)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway/tree/main/deploy-template)
 
 The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button is zero-config by default: it deploys an open no-key gateway first, then you can optionally set `SEARCH_GATEWAY_TOKEN` to require bearer auth.
 
@@ -276,7 +276,7 @@ Use the button at the top of this README. The default deployment requires no sec
 
 - build command: `npm run build`
 - deploy command: `npm run deploy`
-- Worker config: `wrangler.toml`
+- Worker config: `deploy-template/wrangler.json`
 - default search: no-key DuckDuckGo/Bing HTML fallbacks
 - default auth mode: `open`
 

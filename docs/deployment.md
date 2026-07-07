@@ -52,7 +52,7 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-The Worker config is intentionally a minimal `wrangler.toml` so Cloudflare's dashboard importer and Wrangler CLI parse the same file.
+For repository-root development, `wrangler.toml` is intentionally minimal. For Cloudflare Dashboard one-click import, use the isolated `deploy-template/` subdirectory, which contains a strict `wrangler.json` and no extra repository files.
 
 Default values:
 
@@ -60,6 +60,12 @@ Default values:
 - Entrypoint: `src/index.js`
 - Workers.dev enabled: `true`
 - Default vars: `BING_MARKET=en-US`, `DUCKDUCKGO_LANGUAGE=en-US`
+
+One-click template URL:
+
+```text
+https://github.com/EitanWong/search-gateway/tree/main/deploy-template
+```
 
 ## GitHub deployment workflow
 
