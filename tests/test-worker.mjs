@@ -111,9 +111,20 @@ try {
     assert.equal(authedData.providers.brave, true);
     assert.deepEqual(authedData.provider_order, ['brave', 'serper', 'tavily', 'duckduckgo', 'bing']);
     assert.equal(authedData.auth_configured, true);
+    assert.equal(authedData.auth_required, true);
+    assert.equal(authedData.auth_mode, 'bearer');
+
+    const openHealth = await call('/health', {}, {});
+    assert.equal(openHealth.status, 200);
+    const openHealthData = await openHealth.json();
+    assert.equal(openHealthData.auth_configured, false);
+    assert.equal(openHealthData.auth_required, false);
+    assert.equal(openHealthData.auth_mode, 'open');
+    assert.equal(openHealthData.setup.status, 'zero_config_open');
+    assert.equal(openHealthData.providers.duckduckgo, true);
   }
 
-  // auth is enforced for both search and fetch.
+  // auth is enforced when SEARCH_GATEWAY_TOKEN is configured, and zero-config open mode works without it.
   {
     const res = await call('/search', {
       method: 'POST',
@@ -128,6 +139,21 @@ try {
       body: JSON.stringify({ url: 'https://example.com' }),
     });
     assert.equal(fetchRes.status, 401);
+
+    const openSearchRes = await call('/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'test', provider: 'google' }),
+    }, {});
+    assert.equal(openSearchRes.status, 400);
+    assert.equal((await openSearchRes.json()).error, 'unsupported provider: google');
+
+    const openFetchRes = await call('/fetch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'not-a-url' }),
+    }, {});
+    assert.equal(openFetchRes.status, 400);
   }
 
   // input guardrails reject oversized/unsupported search and request payloads early.

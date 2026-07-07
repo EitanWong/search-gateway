@@ -1,6 +1,6 @@
 # One-click Cloudflare deployment
 
-This repository is designed to be imported and deployed directly on Cloudflare Workers with Cloudflare's Deploy to Workers flow.
+This repository is designed for Cloudflare's Deploy to Workers flow with **zero mandatory configuration**.
 
 ## Deploy button
 
@@ -10,75 +10,68 @@ This repository is designed to be imported and deployed directly on Cloudflare W
 
 The button opens Cloudflare's Workers deploy flow and imports this public GitHub repository.
 
-## What Cloudflare expects
+## What should be prefilled
 
-The repository includes the standard Worker files:
+Cloudflare reads this repository's standard Worker template files:
 
-- `wrangler.toml` — Worker name, entrypoint, compatibility date, and observability.
+- `wrangler.jsonc` — Worker name, entrypoint, compatibility date, observability, and default vars.
 - `src/index.js` — Worker entrypoint.
-- `package.json` / `package-lock.json` — reproducible npm install.
+- `package.json` / `package-lock.json` — reproducible npm install and Cloudflare template metadata.
+- `npm run build` — syntax/build validation.
 - `npm run deploy` — deploy command.
-- `.dev.vars.example` — secret names surfaced by Cloudflare during one-click deployment.
 
-No build step is required; Wrangler deploys `src/index.js` directly.
+Expected Deploy to Workers settings:
 
-## Required secret during deployment
+| Setting | Expected value |
+|---|---|
+| Repository | `https://github.com/EitanWong/search-gateway` |
+| Worker name | `search-gateway` |
+| Install command | `npm ci` |
+| Build command | `npm run build` |
+| Deploy command | `npm run deploy` |
+| Config file | `wrangler.jsonc` |
+| Required secrets | none |
 
-Cloudflare reads `.dev.vars.example` and prompts for Worker secrets during the deploy flow.
+## Default auth mode
 
-Required:
+To make one-click deployment real, the Worker defaults to open mode when no `SEARCH_GATEWAY_TOKEN` secret exists:
 
-```ini
-SEARCH_GATEWAY_TOKEN=
+```json
+{
+  "auth_mode": "open",
+  "setup": {
+    "status": "zero_config_open"
+  }
+}
 ```
 
-Generate a strong random token, for example:
+That means `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` are usable immediately after deployment.
+
+For production or public endpoints, switch to bearer auth by setting a Worker secret:
 
 ```bash
 openssl rand -hex 32
+npx wrangler secret put SEARCH_GATEWAY_TOKEN
 ```
 
-Use this value as the bearer token for authenticated requests:
+After that, requests must include:
 
 ```http
-Authorization: Bearer <SEARCH_GATEWAY_TOKEN>
+Authorization: Bearer <your-token>
 ```
 
-Optional provider secrets/vars:
+## Optional provider configuration
 
-```ini
-SEARXNG_URL=https://your-searxng.example.com
-BRAVE_SEARCH_API_KEY=
-SERPER_API_KEY=
-TAVILY_API_KEY=
+The gateway works without paid provider keys by using DuckDuckGo/Bing HTML fallbacks where reachable.
+
+Optional provider secrets can be added after deployment:
+
+```bash
+npx wrangler secret put SEARXNG_URL
+npx wrangler secret put BRAVE_SEARCH_API_KEY
+npx wrangler secret put SERPER_API_KEY
+npx wrangler secret put TAVILY_API_KEY
 ```
-
-Without paid provider keys, `/search` still has no-key fallback providers (`duckduckgo`, `bing`) where reachable.
-
-## Dashboard import flow
-
-If you do not use the button:
-
-1. Go to Cloudflare Dashboard → Workers & Pages.
-2. Create application / Worker from GitHub repository.
-3. Select `EitanWong/search-gateway`.
-4. Use the existing `wrangler.toml`.
-5. Install command: `npm ci`.
-6. Deploy command: `npm run deploy`.
-7. Set `SEARCH_GATEWAY_TOKEN` as a Worker secret if the import flow did not prompt for it.
-8. Visit `/health` to verify the deployment.
-
-## GitHub Actions deployment
-
-This repository includes `.github/workflows/deploy-cloudflare.yml` for manual Cloudflare deployment from GitHub Actions.
-It is intentionally `workflow_dispatch`-only so fresh forks and public imports do not fail on every push before Cloudflare secrets are configured.
-
-To enable it, set these GitHub repository secrets:
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-`SEARCH_GATEWAY_TOKEN` and provider keys must still be configured as Cloudflare Worker secrets.
 
 ## Post-deploy health check
 
@@ -88,14 +81,15 @@ Public health check:
 curl https://<your-worker>.<your-subdomain>.workers.dev/health
 ```
 
-Authenticated health check:
+Zero-config search:
 
 ```bash
-curl -H "Authorization: Bearer $SEARCH_GATEWAY_TOKEN" \
-  https://<your-worker>.<your-subdomain>.workers.dev/health
+curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Cloudflare Workers docs","limit":3,"provider":"auto"}'
 ```
 
-Authenticated search:
+Bearer-auth search after `SEARCH_GATEWAY_TOKEN` is configured:
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/search \
@@ -103,3 +97,28 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/search \
   -H "Content-Type: application/json" \
   -d '{"query":"Cloudflare Workers docs","limit":3,"provider":"auto"}'
 ```
+
+## Manual dashboard import
+
+If you do not use the button:
+
+1. Go to Cloudflare Dashboard → Workers & Pages.
+2. Create application / Worker from GitHub repository.
+3. Select `EitanWong/search-gateway`.
+4. Use `wrangler.jsonc`.
+5. Install command: `npm ci`.
+6. Build command: `npm run build`.
+7. Deploy command: `npm run deploy`.
+8. Visit `/health` to verify the deployment.
+
+## GitHub Actions deployment
+
+This repository includes `.github/workflows/deploy-cloudflare.yml` for manual Cloudflare deployment from GitHub Actions.
+It is intentionally `workflow_dispatch`-only so fresh forks and public imports do not fail on every push before Cloudflare credentials are configured.
+
+To enable it, set these GitHub repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are configured on the Cloudflare Worker, not in this repository.

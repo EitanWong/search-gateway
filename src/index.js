@@ -463,9 +463,13 @@ function canonicalizeUrl(input) {
   }
 }
 
+function authRequired(env) {
+  return Boolean(env.SEARCH_GATEWAY_TOKEN);
+}
+
 function isAuthorized(request, env) {
   const expected = env.SEARCH_GATEWAY_TOKEN;
-  if (!expected) return false;
+  if (!expected) return true;
   const auth = request.headers.get("authorization") || "";
   return auth === `Bearer ${expected}`;
 }
@@ -679,7 +683,16 @@ function healthPayload(env, includeConfig = false) {
       bing: true,
     },
     provider_order: configuredProviders("auto", env),
-    auth_configured: Boolean(env.SEARCH_GATEWAY_TOKEN),
+    auth_configured: authRequired(env),
+    auth_required: authRequired(env),
+    auth_mode: authRequired(env) ? "bearer" : "open",
+    setup: authRequired(env) ? {
+      status: "secure",
+      message: "SEARCH_GATEWAY_TOKEN is configured; authenticated endpoints require Authorization: Bearer <token>.",
+    } : {
+      status: "zero_config_open",
+      message: "No SEARCH_GATEWAY_TOKEN is configured, so authenticated endpoints are open for one-click deployment. Set SEARCH_GATEWAY_TOKEN as a Worker secret to require bearer auth.",
+    },
     optional_kv_rate_limit: Boolean(env.SEARCH_RATE_LIMIT_KV || env.RATE_LIMIT_KV),
   };
 }

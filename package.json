@@ -1,7 +1,7 @@
 {
   "name": "search-gateway",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "description": "Cloudflare Worker search/fetch gateway for AI agents in restricted networks.",
   "license": "Apache-2.0",
@@ -24,28 +24,22 @@
     "test:ci": "npm run check && npm test && npm run test:search-quality && python3 tests/test-plugin.py && python3 -m py_compile tests/test-plugin.py && npm run dry-run",
     "dev": "npx wrangler dev --local --ip 127.0.0.1 --port 8787",
     "deploy": "npx wrangler deploy",
-    "dry-run": "npx wrangler deploy --dry-run --outdir dist"
+    "dry-run": "npx wrangler deploy --dry-run --outdir dist",
+    "build": "npm run check"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
   },
   "cloudflare": {
-    "bindings": {
-      "SEARCH_GATEWAY_TOKEN": {
-        "description": "Required. Generate a strong random bearer token for authenticated /search and /fetch requests, for example `openssl rand -hex 32`."
-      },
-      "SEARXNG_URL": {
-        "description": "Optional. URL of your SearXNG JSON API instance. Leave blank to use no-key DuckDuckGo/Bing fallbacks and any configured paid providers."
-      },
-      "BRAVE_SEARCH_API_KEY": {
-        "description": "Optional. Brave Search API key for higher-quality search results."
-      },
-      "SERPER_API_KEY": {
-        "description": "Optional. Serper API key for Google-style search results."
-      },
-      "TAVILY_API_KEY": {
-        "description": "Optional. Tavily API key for search results."
-      }
-    }
+    "label": "Search Gateway",
+    "products": [
+      "Workers"
+    ],
+    "categories": [
+      "ai",
+      "developer-tools"
+    ],
+    "docs_url": "https://github.com/EitanWong/search-gateway#readme",
+    "publish": true
   }
 }

@@ -4,7 +4,7 @@ Backs generic tools `search_web` and `fetch_url` with a Cloudflare Worker
 Search Gateway. Configuration comes from the profile environment:
 
 - SEARCH_GATEWAY_URL=https://...workers.dev
-- SEARCH_GATEWAY_TOKEN=...
+- SEARCH_GATEWAY_TOKEN=... (optional; only needed when the Worker has SEARCH_GATEWAY_TOKEN configured)
 """
 from __future__ import annotations
 
@@ -44,23 +44,25 @@ def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
 
 def _post(path: str, payload: dict[str, Any], timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
     base_url, token = _config()
-    if not base_url or not token:
+    if not base_url:
         return {
             "ok": False,
-            "error": "SEARCH_GATEWAY_URL and SEARCH_GATEWAY_TOKEN must be configured in the Hermes profile environment",
-            "missing": [name for name, value in [("SEARCH_GATEWAY_URL", base_url), ("SEARCH_GATEWAY_TOKEN", token)] if not value],
+            "error": "SEARCH_GATEWAY_URL must be configured in the Hermes profile environment",
+            "missing": ["SEARCH_GATEWAY_URL"],
         }
     url = base_url + path
     data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "content-type": "application/json",
+        "user-agent": "Hermes search-gateway plugin/0.1",
+    }
+    if token:
+        headers["authorization"] = "Bearer " + token
     req = urllib.request.Request(
         url,
         data=data,
         method="POST",
-        headers={
-            "content-type": "application/json",
-            "authorization": "Bearer " + token,
-            "user-agent": "Hermes search-gateway plugin/0.1",
-        },
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:

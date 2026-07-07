@@ -4,7 +4,7 @@ Cloudflare Worker search/fetch gateway for agents running in restricted networks
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
 
-The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. During one-click deployment, Cloudflare prompts for the required `SEARCH_GATEWAY_TOKEN` secret; generate a strong random value such as `openssl rand -hex 32`.
+The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button is zero-config by default: it deploys an open no-key gateway first, then you can optionally set `SEARCH_GATEWAY_TOKEN` to require bearer auth.
 
 ## Documentation
 
@@ -20,11 +20,11 @@ The local agent talks to one stable endpoint; the Worker handles provider choice
 
 ## Endpoints
 
-- `GET /health` — public health/capability check. Provider configuration details are hidden unless the request includes a valid bearer token.
-- `POST /search` — authenticated search.
-- `POST /fetch` — authenticated page text extraction.
+- `GET /health` — public health/capability check. In zero-config mode it also reports `auth_mode: "open"`; after `SEARCH_GATEWAY_TOKEN` is configured it reports secure bearer mode only to authenticated callers.
+- `POST /search` — search endpoint. Open in zero-config mode; bearer-authenticated after `SEARCH_GATEWAY_TOKEN` is configured.
+- `POST /fetch` — page text extraction endpoint. Open in zero-config mode; bearer-authenticated after `SEARCH_GATEWAY_TOKEN` is configured.
 
-All authenticated requests require:
+When `SEARCH_GATEWAY_TOKEN` is configured, authenticated requests require:
 
 ```http
 Authorization: Bearer <gateway-token>
@@ -270,25 +270,46 @@ The live smoke uses Bing HTML search and `https://example.com`; it is intentiona
 
 ## Deploy
 
+### One-click Cloudflare deploy
+
+Use the button at the top of this README. The default deployment requires no secrets or provider keys:
+
+- build command: `npm run build`
+- deploy command: `npm run deploy`
+- Worker config: `wrangler.jsonc`
+- default search: no-key DuckDuckGo/Bing HTML fallbacks
+- default auth mode: `open`
+
+After deployment, visit `/health`. If you want bearer auth, generate a token and set it as a Worker secret:
+
 ```bash
-cd /opt/data/projects/typescript/cloudflare-workers/search-gateway
-npx wrangler login
+openssl rand -hex 32
 npx wrangler secret put SEARCH_GATEWAY_TOKEN
-# Optional no-paid-key meta-search provider (recommended):
-# Set SEARXNG_URL as a Worker variable or secret, e.g. https://your-searxng.example.com
+```
+
+Optional providers can be added later:
+
+```bash
 npx wrangler secret put SEARXNG_URL
-# Optional high-quality paid search providers:
 npx wrangler secret put BRAVE_SEARCH_API_KEY
 npx wrangler secret put SERPER_API_KEY
 npx wrangler secret put TAVILY_API_KEY
-npx wrangler deploy
+```
+
+Manual deploy from a local checkout:
+
+```bash
+npm ci
+npm run build
+npm run deploy
 ```
 
 After deploy, set Hermes profile env:
 
 ```env
 SEARCH_GATEWAY_URL=https://search-gateway.<your-subdomain>.workers.dev
-# SEARCH_GATEWAY_TOKEN should be set to the same secret value configured in Cloudflare.
+# Optional. Only set this if you configured SEARCH_GATEWAY_TOKEN on the Worker.
+SEARCH_GATEWAY_TOKEN=<your-worker-secret>
 ```
 
 Then restart Hermes / gateway so the plugin sees the env vars. The Hermes plugin exposes `search_web`, `fetch_url`, `batch_fetch_urls`, and `search_and_fetch`; `fetch_url` supports the Worker's Agent-native fields `mode` (`full`, `text`, `metadata`, `chunks`), `offset`, `chunk_chars`, and `cache_ttl`, `batch_fetch_urls` reads up to 10 URLs in one gateway call for cheap metadata triage or parallel chunk extraction, and `search_and_fetch` compresses search → fetch top results into one tool call.
@@ -297,7 +318,8 @@ Then restart Hermes / gateway so the plugin sees the env vars. The Hermes plugin
 
 - Prefer SearXNG for a no-paid-key, open-source metasearch layer. Self-hosting is more reliable than public instances; the instance must enable JSON output (`format=json`).
 - `auto` is designed to keep web search functional with no paid provider keys: DuckDuckGo HTML is tried before Bing HTML.
-- Do not deploy without `SEARCH_GATEWAY_TOKEN`.
+- The one-click deployment intentionally starts in `auth_mode: "open"` so Cloudflare can deploy it with zero mandatory form fields. Set `SEARCH_GATEWAY_TOKEN` as a Worker secret to switch `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` to bearer-auth mode.
+- Keep open mode only for personal/testing deployments or behind Cloudflare Access/rate limits. For public production use, configure `SEARCH_GATEWAY_TOKEN` and Cloudflare dashboard rate limiting.
 - Do not commit `.dev.vars`, `.env`, or real secrets.
 - `/search` validates configured `SEARXNG_URL` and `DUCKDUCKGO_ENDPOINT` with the same private-host checks used by `/fetch`, so a compromised config cannot turn the Worker into an internal-network probe. Like most Worker-side URL guards, this blocks literal private hosts/IPs but cannot pre-resolve arbitrary public hostnames to prevent DNS-rebinding style answers.
 - `/fetch` blocks localhost/private IP literals, URL credentials, localhost-style trailing-dot names, link-local/ULA IPv6, IPv4-mapped IPv6, CGNAT/reserved IPv4 ranges, and common non-public literal address forms to reduce SSRF risk.

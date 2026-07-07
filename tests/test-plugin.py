@@ -160,6 +160,32 @@ def test_search_and_fetch_tool_exposes_and_maps_fields():
     }]
 
 
+
+def test_post_allows_zero_config_without_token():
+    plugin = load_plugin()
+    seen = []
+    plugin._config = lambda: ("https://gateway.test", None)
+
+    class FakeResponse:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return False
+        def read(self, n=-1):
+            return b'{"ok": true}'
+
+    def fake_urlopen(req, timeout=plugin.DEFAULT_TIMEOUT):
+        seen.append({"url": req.full_url, "headers": dict(req.header_items()), "timeout": timeout})
+        return FakeResponse()
+
+    plugin.urllib.request.urlopen = fake_urlopen
+    result = plugin._post("/search", {"query": "docs"})
+    assert result["ok"] is True
+    assert seen[0]["url"] == "https://gateway.test/search"
+    assert "Authorization" not in seen[0]["headers"]
+
+
 def test_http_error_preserves_gateway_body_top_level():
     plugin = load_plugin()
     plugin._config = lambda: ("https://gateway.test", "token")
@@ -212,6 +238,7 @@ def main():
         test_fetch_handler_passes_agent_native_fields,
         test_batch_fetch_tool_exposes_and_maps_shared_fields,
         test_search_and_fetch_tool_exposes_and_maps_fields,
+        test_post_allows_zero_config_without_token,
         test_http_error_preserves_gateway_body_top_level,
         test_tool_descriptions_teach_agent_workflow,
     ]:
