@@ -2,10 +2,6 @@ name = "search-gateway"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 workers_dev = true
-upload_source_maps = true
-
-[observability]
-enabled = true
 
 [vars]
 BING_MARKET = "en-US"

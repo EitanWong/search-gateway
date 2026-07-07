@@ -52,14 +52,13 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-The Worker config is present in both `wrangler.toml` and `wrangler.jsonc`. They intentionally contain the same Worker name, entrypoint, compatibility date, observability, and default vars so older Cloudflare importers can read TOML while newer tooling can read JSONC.
+The Worker config is present in both `wrangler.toml` and `wrangler.jsonc`. They intentionally contain the same Worker name, entrypoint, compatibility date, workers.dev setting, and default vars so older Cloudflare importers can read TOML while newer tooling can read JSONC.
 
 Default values:
 
 - Worker name: `search-gateway`
 - Entrypoint: `src/index.js`
 - Workers.dev enabled: `true`
-- Observability enabled: `true`
 - Default vars: `BING_MARKET=en-US`, `DUCKDUCKGO_LANGUAGE=en-US`
 
 ## GitHub deployment workflow

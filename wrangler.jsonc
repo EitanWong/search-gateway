@@ -3,10 +3,6 @@
   "main": "src/index.js",
   "compatibility_date": "2026-07-01",
   "workers_dev": true,
-  "observability": {
-    "enabled": true
-  },
-  "upload_source_maps": true,
   "vars": {
     "BING_MARKET": "en-US",
     "DUCKDUCKGO_LANGUAGE": "en-US"
