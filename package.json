@@ -28,5 +28,24 @@
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "SEARCH_GATEWAY_TOKEN": {
+        "description": "Required. Generate a strong random bearer token for authenticated /search and /fetch requests, for example `openssl rand -hex 32`."
+      },
+      "SEARXNG_URL": {
+        "description": "Optional. URL of your SearXNG JSON API instance. Leave blank to use no-key DuckDuckGo/Bing fallbacks and any configured paid providers."
+      },
+      "BRAVE_SEARCH_API_KEY": {
+        "description": "Optional. Brave Search API key for higher-quality search results."
+      },
+      "SERPER_API_KEY": {
+        "description": "Optional. Serper API key for Google-style search results."
+      },
+      "TAVILY_API_KEY": {
+        "description": "Optional. Tavily API key for search results."
+      }
+    }
   }
 }

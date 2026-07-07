@@ -4,9 +4,7 @@ Cloudflare Worker search/fetch gateway for agents running in restricted networks
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
 
-> Replace `OWNER` in the deploy button URL after publishing this repository to GitHub.
-
-The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching.
+The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. During one-click deployment, Cloudflare prompts for the required `SEARCH_GATEWAY_TOKEN` secret; generate a strong random value such as `openssl rand -hex 32`.
 
 ## Documentation
 
