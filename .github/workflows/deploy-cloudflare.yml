@@ -2,8 +2,6 @@ name: Deploy to Cloudflare Workers
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, master]
 
 permissions:
   contents: read

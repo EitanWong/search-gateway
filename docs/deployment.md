@@ -31,9 +31,12 @@ npm run dry-run
 npm run deploy
 ```
 
-## Automatic GitHub deployment
+## GitHub deployment workflow
 
-The repository includes `.github/workflows/deploy-cloudflare.yml`. It deploys automatically on push to `main` or `master` after these GitHub repository secrets are configured:
+The repository includes `.github/workflows/deploy-cloudflare.yml` for manual deployment from GitHub Actions.
+It is intentionally `workflow_dispatch`-only so fresh forks and public imports do not fail on every push before Cloudflare secrets are configured.
+
+Before running it, configure these GitHub repository secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
