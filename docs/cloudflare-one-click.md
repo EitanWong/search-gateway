@@ -5,7 +5,7 @@ This repository is designed for Cloudflare's Deploy to Workers flow with **zero 
 ## Deploy button
 
 ```md
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway/tree/main/deploy-template)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway/deploy-template)
 ```
 
 The button opens Cloudflare's Workers deploy flow and imports this public GitHub repository.
@@ -14,7 +14,7 @@ The button opens Cloudflare's Workers deploy flow and imports this public GitHub
 
 Cloudflare reads the isolated `deploy-template/` subdirectory. This avoids Dashboard importer bugs caused by scanning a full development repository. The deploy template contains:
 
-- `wrangler.json` — strict JSON Wrangler config with `$schema`, Worker name, entrypoint, conservative compatibility date, and default vars.
+- `wrangler.jsonc` — JSONC Wrangler config with `$schema`, Worker name, entrypoint, conservative compatibility date, and default vars.
 - `src/index.js` — Worker entrypoint.
 - `package.json` / `package-lock.json` — reproducible npm install.
 - `npm run build` — syntax/build validation.
@@ -24,18 +24,18 @@ Expected Deploy to Workers settings:
 
 | Setting | Expected value |
 |---|---|
-| Repository | `https://github.com/EitanWong/search-gateway/tree/main/deploy-template` |
+| Repository | `https://github.com/EitanWong/search-gateway/deploy-template` |
 | Worker name | `search-gateway` |
 | Install command | `npm ci` |
 | Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
-| Config file | `wrangler.json` |
+| Config file | `wrangler.jsonc` |
 | Required secrets | none |
 
 If the dashboard asks for the repository URL manually, use the subdirectory URL:
 
 ```text
-https://github.com/EitanWong/search-gateway/tree/main/deploy-template
+https://github.com/EitanWong/search-gateway/deploy-template
 ```
 
 ## Default auth mode
@@ -110,8 +110,8 @@ If you do not use the button:
 
 1. Go to Cloudflare Dashboard → Workers & Pages.
 2. Create application / Worker from GitHub repository.
-3. Enter `https://github.com/EitanWong/search-gateway/tree/main/deploy-template`.
-4. Use `wrangler.json` if the dashboard asks for a config file.
+3. Enter `https://github.com/EitanWong/search-gateway/deploy-template`.
+4. Use `wrangler.jsonc` if the dashboard asks for a config file.
 5. Install command: `npm ci`.
 6. Build command: `npm run build`.
 7. Deploy command: `npm run deploy`.
