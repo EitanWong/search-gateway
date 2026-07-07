@@ -15,7 +15,6 @@ The button opens Cloudflare's Workers deploy flow and imports this public GitHub
 Cloudflare reads this repository's standard Worker template files:
 
 - `wrangler.toml` — conservative compatibility config for Cloudflare's Deploy to Workers importer.
-- `wrangler.jsonc` — equivalent modern Wrangler config retained for newer tooling.
 - `src/index.js` — Worker entrypoint.
 - `package.json` / `package-lock.json` — reproducible npm install and Cloudflare template metadata.
 - `npm run build` — syntax/build validation.
@@ -30,7 +29,7 @@ Expected Deploy to Workers settings:
 | Install command | `npm ci` |
 | Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
-| Config file | `wrangler.toml` or `wrangler.jsonc` |
+| Config file | `wrangler.toml` |
 | Required secrets | none |
 
 If the dashboard reports “Unable to fetch repository contents”, retry with the explicit clone URL:
@@ -112,7 +111,7 @@ If you do not use the button:
 1. Go to Cloudflare Dashboard → Workers & Pages.
 2. Create application / Worker from GitHub repository.
 3. Select `EitanWong/search-gateway`.
-4. Use `wrangler.toml` if the dashboard asks for a config file; `wrangler.jsonc` is also present for newer tooling.
+4. Use `wrangler.toml` if the dashboard asks for a config file.
 5. Install command: `npm ci`.
 6. Build command: `npm run build`.
 7. Deploy command: `npm run deploy`.

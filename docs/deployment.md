@@ -52,7 +52,7 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-The Worker config is present in both `wrangler.toml` and `wrangler.jsonc`. They intentionally contain the same Worker name, entrypoint, compatibility date, workers.dev setting, and default vars so older Cloudflare importers can read TOML while newer tooling can read JSONC.
+The Worker config is intentionally a minimal `wrangler.toml` so Cloudflare's dashboard importer and Wrangler CLI parse the same file.
 
 Default values:
 
