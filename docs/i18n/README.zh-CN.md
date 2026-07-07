@@ -1,6 +1,6 @@
-# agent-search-gateway 简体中文
+# search-gateway 简体中文
 
-`agent-search-gateway` 是面向 AI Agent 的 Cloudflare Worker 搜索/网页抓取网关。
+`search-gateway` 是面向 AI Agent 的 Cloudflare Worker 搜索/网页抓取网关。
 
 核心能力：
 

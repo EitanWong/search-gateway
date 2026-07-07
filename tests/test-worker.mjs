@@ -95,7 +95,7 @@ try {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
-    assert.equal(data.service, 'agent-search-gateway');
+    assert.equal(data.service, 'search-gateway');
     assert.deepEqual(data.capabilities.search_strategies, ['fallback', 'aggregate']);
     assert.equal(data.capabilities.canonical_dedupe, true);
     assert.equal('providers' in data, false);

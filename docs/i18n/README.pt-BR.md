@@ -1,6 +1,6 @@
-# agent-search-gateway Português do Brasil
+# search-gateway Português do Brasil
 
-`agent-search-gateway` é um gateway Cloudflare Worker de busca e captura de páginas para agentes de IA.
+`search-gateway` é um gateway Cloudflare Worker de busca e captura de páginas para agentes de IA.
 
 Recursos principais:
 

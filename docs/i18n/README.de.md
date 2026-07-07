@@ -1,6 +1,6 @@
-# agent-search-gateway Deutsch
+# search-gateway Deutsch
 
-`agent-search-gateway` ist ein Cloudflare-Worker-Gateway für Suche und Webseitenabruf durch KI-Agenten.
+`search-gateway` ist ein Cloudflare-Worker-Gateway für Suche und Webseitenabruf durch KI-Agenten.
 
 Funktionen:
 

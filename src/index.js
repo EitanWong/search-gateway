@@ -642,7 +642,7 @@ function isBlockedIpv4(parts) {
 function healthPayload(env, includeConfig = false) {
   const base = {
     ok: true,
-    service: "agent-search-gateway",
+    service: "search-gateway",
     capabilities: {
       search_strategies: ["fallback", "aggregate"],
       canonical_dedupe: true,
@@ -1074,7 +1074,7 @@ async function duckDuckGoSearch(query, limit, env, options = {}) {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      "user-agent": "Mozilla/5.0 (compatible; agent-search-gateway/0.2)",
+      "user-agent": "Mozilla/5.0 (compatible; search-gateway/0.2)",
       "accept-language": `${language},en;q=0.8`,
     },
     body: new URLSearchParams({ q: query }).toString(),
@@ -1124,7 +1124,7 @@ async function bingSearch(query, limit, env, options = {}) {
   }
   const { response } = await safeFetch(url.toString(), {
     headers: {
-      "user-agent": "Mozilla/5.0 (compatible; agent-search-gateway/0.1)",
+      "user-agent": "Mozilla/5.0 (compatible; search-gateway/0.1)",
       "accept-language": `${market},en;q=0.8,zh-CN;q=0.6`,
     },
   });
@@ -1283,7 +1283,7 @@ function fetchCacheTtl(value) {
 }
 
 function fetchCacheKey({ url, maxChars, offset }) {
-  const key = new URL("https://agent-search-gateway.local/__fetch_cache");
+  const key = new URL("https://search-gateway.local/__fetch_cache");
   key.searchParams.set("url", url);
   key.searchParams.set("max_chars", String(maxChars));
   key.searchParams.set("offset", String(offset));
@@ -1427,7 +1427,7 @@ async function runFetch(body, env = {}) {
   try {
     ({ response, finalUrl } = await safeFetch(parsed.toString(), {
       headers: {
-        "user-agent": "Mozilla/5.0 (compatible; agent-search-gateway/0.1)",
+        "user-agent": "Mozilla/5.0 (compatible; search-gateway/0.1)",
         accept: "text/html,application/xhtml+xml,application/json,text/plain,application/xml;q=0.9,*/*;q=0.2",
       },
     }));

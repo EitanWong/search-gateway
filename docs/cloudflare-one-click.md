@@ -4,10 +4,10 @@ This repository is designed to be imported and deployed directly on Cloudflare W
 
 ## Deploy button
 
-After this project is published on GitHub, replace `EitanWong/agent-search-gateway` with the real repository path:
+After this project is published on GitHub, replace `EitanWong/search-gateway` with the real repository path:
 
 ```md
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/agent-search-gateway)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
 ```
 
 The button opens Cloudflare's Workers deploy flow and imports the GitHub repository.

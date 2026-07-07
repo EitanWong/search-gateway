@@ -1,6 +1,6 @@
-# agent-search-gateway Français
+# search-gateway Français
 
-`agent-search-gateway` est une passerelle Cloudflare Worker de recherche et de récupération web pour agents IA.
+`search-gateway` est une passerelle Cloudflare Worker de recherche et de récupération web pour agents IA.
 
 Fonctionnalités:
 

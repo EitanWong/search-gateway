@@ -1,6 +1,6 @@
-# agent-search-gateway 한국어
+# search-gateway 한국어
 
-`agent-search-gateway`는 AI Agent를 위한 Cloudflare Worker 검색/웹 페이지 가져오기 게이트웨이입니다.
+`search-gateway`는 AI Agent를 위한 Cloudflare Worker 검색/웹 페이지 가져오기 게이트웨이입니다.
 
 주요 기능:
 

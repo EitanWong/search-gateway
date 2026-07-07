@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for improving `agent-search-gateway`.
+Thanks for improving `search-gateway`.
 
 ## Development
 

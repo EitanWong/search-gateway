@@ -1,8 +1,8 @@
-# agent-search-gateway
+# search-gateway
 
 Cloudflare Worker search/fetch gateway for agents running in restricted networks.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/agent-search-gateway)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
 
 > Replace `OWNER` in the deploy button URL after publishing this repository to GitHub.
 

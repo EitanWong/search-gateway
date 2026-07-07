@@ -1,6 +1,6 @@
 # Hermes integration
 
-This directory contains a Hermes Agent plugin for `agent-search-gateway`.
+This directory contains a Hermes Agent plugin for `search-gateway`.
 
 ## Install
 

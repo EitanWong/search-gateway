@@ -1,6 +1,6 @@
-# agent-search-gateway Español
+# search-gateway Español
 
-`agent-search-gateway` es una pasarela de búsqueda y extracción web en Cloudflare Workers para agentes de IA.
+`search-gateway` es una pasarela de búsqueda y extracción web en Cloudflare Workers para agentes de IA.
 
 Funciones principales:
 

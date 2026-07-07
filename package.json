@@ -1,5 +1,5 @@
 {
-  "name": "agent-search-gateway",
+  "name": "search-gateway",
   "version": "0.1.0",
   "private": false,
   "type": "module",
