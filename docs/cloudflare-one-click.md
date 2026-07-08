@@ -14,7 +14,7 @@ The button opens Cloudflare's Workers deploy flow and imports this public GitHub
 
 Cloudflare imports the repository root. The root intentionally contains the deployable Worker surface:
 
-- `wrangler.toml` — minimal Worker config with Worker name, entrypoint, conservative compatibility date, and default vars.
+- `wrangler.json` — strict JSON Worker config with Worker name, entrypoint, conservative compatibility date, and default vars.
 - `src/index.js` — Worker entrypoint.
 - `package.json` / `package-lock.json` — reproducible npm install.
 - `npm run build` — minimal syntax/build validation.
@@ -29,7 +29,7 @@ Expected Deploy to Workers settings:
 | Install command | `npm ci` |
 | Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
-| Config file | `wrangler.toml` |
+| Config file | `wrangler.json` |
 | Required secrets | none |
 
 If the dashboard asks for the repository URL manually, use the repository root URL:
@@ -111,7 +111,7 @@ If you do not use the button:
 1. Go to Cloudflare Dashboard → Workers & Pages.
 2. Create application / Worker from GitHub repository.
 3. Enter `https://github.com/EitanWong/search-gateway`.
-4. Use `wrangler.toml` if the dashboard asks for a config file.
+4. Use `wrangler.json` if the dashboard asks for a config file.
 5. Install command: `npm ci`.
 6. Build command: `npm run build`.
 7. Deploy command: `npm run deploy`.
@@ -131,4 +131,4 @@ Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are conf
 
 ## Dashboard importer compatibility note
 
-Use the repository root URL for Deploy to Cloudflare. Although `create-cloudflare` can work with remote templates, Cloudflare Dashboard import paths are more reliable when the Deploy Button points at the repository root. The root contains the deployable Worker config (`wrangler.toml`), package scripts, and Cloudflare template metadata. The `deploy-template/` directory is kept only as a minimal local/CI compatibility fixture, not as the public Deploy Button target.
+Use the repository root URL for Deploy to Cloudflare. Although `create-cloudflare` can work with remote templates, Cloudflare Dashboard import paths are more reliable when the Deploy Button points at the repository root. The root contains the deployable Worker config (`wrangler.json`), package scripts, and Cloudflare template metadata. The `deploy-template/` directory is kept only as a minimal local/CI compatibility fixture, not as the public Deploy Button target.

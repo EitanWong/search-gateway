@@ -14,5 +14,5 @@
 # TAVILY_API_KEY=
 
 # Optional best-effort in-worker limiter. Requires adding a KV binding named
-# SEARCH_RATE_LIMIT_KV in wrangler.toml or in the Cloudflare dashboard.
+# SEARCH_RATE_LIMIT_KV in wrangler.json or in the Cloudflare dashboard.
 # SEARCH_RATE_LIMIT_PER_MINUTE=60
