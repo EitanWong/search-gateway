@@ -463,13 +463,21 @@ function canonicalizeUrl(input) {
   }
 }
 
-function authRequired(env) {
+function authConfigured(env) {
   return Boolean(env.SEARCH_GATEWAY_TOKEN);
+}
+
+function openModeAllowed(env) {
+  return String(env.SEARCH_GATEWAY_ALLOW_OPEN || "").toLowerCase() === "true";
+}
+
+function authRequired(env) {
+  return authConfigured(env) || !openModeAllowed(env);
 }
 
 function isAuthorized(request, env) {
   const expected = env.SEARCH_GATEWAY_TOKEN;
-  if (!expected) return true;
+  if (!expected) return openModeAllowed(env);
   const auth = request.headers.get("authorization") || "";
   return auth === `Bearer ${expected}`;
 }
@@ -683,15 +691,18 @@ function healthPayload(env, includeConfig = false) {
       bing: true,
     },
     provider_order: configuredProviders("auto", env),
-    auth_configured: authRequired(env),
+    auth_configured: authConfigured(env),
     auth_required: authRequired(env),
-    auth_mode: authRequired(env) ? "bearer" : "open",
-    setup: authRequired(env) ? {
+    auth_mode: authConfigured(env) ? "bearer" : (openModeAllowed(env) ? "open" : "misconfigured"),
+    setup: authConfigured(env) ? {
       status: "secure",
-      message: "SEARCH_GATEWAY_TOKEN is configured; authenticated endpoints require Authorization: Bearer <token>.",
+      message: "SEARCH_GATEWAY_TOKEN is configured; authenticated endpoints require Authorization: Bearer ***",
+    } : openModeAllowed(env) ? {
+      status: "explicit_open",
+      message: "SEARCH_GATEWAY_ALLOW_OPEN=true is configured; authenticated endpoints are intentionally open. Do not use this for a personal production service.",
     } : {
-      status: "zero_config_open",
-      message: "No SEARCH_GATEWAY_TOKEN is configured, so authenticated endpoints are open for one-click deployment. Set SEARCH_GATEWAY_TOKEN as a Worker secret to require bearer auth.",
+      status: "auth_not_configured",
+      message: "SEARCH_GATEWAY_TOKEN is required by default. Configure it as a Worker secret, or set SEARCH_GATEWAY_ALLOW_OPEN=true only for local/temporary development.",
     },
     optional_kv_rate_limit: Boolean(env.SEARCH_RATE_LIMIT_KV || env.RATE_LIMIT_KV),
   };
@@ -1613,7 +1624,10 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
   if (request.method === "GET" && url.pathname === "/health") {
-    return json(healthPayload(env, isAuthorized(request, env)));
+    return json(healthPayload(env, isAuthorized(request, env) || !authConfigured(env)));
+  }
+  if (authRequired(env) && !authConfigured(env)) {
+    return json(withAgentMeta({ ok: false, status: 503, error: "SEARCH_GATEWAY_TOKEN is required but not configured" }, request_id), 503);
   }
   if (!isAuthorized(request, env)) return json(withAgentMeta({ ok: false, status: 401, error: "unauthorized" }, request_id), 401);
   if (request.method !== "POST") return json(withAgentMeta({ ok: false, status: 405, error: "method not allowed" }, request_id), 405);

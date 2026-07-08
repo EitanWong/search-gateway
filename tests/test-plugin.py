@@ -161,10 +161,16 @@ def test_search_and_fetch_tool_exposes_and_maps_fields():
 
 
 
-def test_post_allows_zero_config_without_token():
+def test_post_requires_token_and_sends_bearer_header():
     plugin = load_plugin()
-    seen = []
+
     plugin._config = lambda: ("https://gateway.test", None)
+    missing = plugin._post("/search", {"query": "docs"})
+    assert missing["ok"] is False
+    assert missing["missing"] == ["SEARCH_GATEWAY_TOKEN"]
+
+    seen = []
+    plugin._config = lambda: ("https://gateway.test", "token")
 
     class FakeResponse:
         status = 200
@@ -183,7 +189,7 @@ def test_post_allows_zero_config_without_token():
     result = plugin._post("/search", {"query": "docs"})
     assert result["ok"] is True
     assert seen[0]["url"] == "https://gateway.test/search"
-    assert "Authorization" not in seen[0]["headers"]
+    assert seen[0]["headers"]["Authorization"] == "Bearer token"
 
 
 def test_http_error_preserves_gateway_body_top_level():
@@ -238,7 +244,7 @@ def main():
         test_fetch_handler_passes_agent_native_fields,
         test_batch_fetch_tool_exposes_and_maps_shared_fields,
         test_search_and_fetch_tool_exposes_and_maps_fields,
-        test_post_allows_zero_config_without_token,
+        test_post_requires_token_and_sends_bearer_header,
         test_http_error_preserves_gateway_body_top_level,
         test_tool_descriptions_teach_agent_workflow,
     ]:

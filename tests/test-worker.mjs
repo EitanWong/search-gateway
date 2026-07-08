@@ -114,17 +114,25 @@ try {
     assert.equal(authedData.auth_required, true);
     assert.equal(authedData.auth_mode, 'bearer');
 
-    const openHealth = await call('/health', {}, {});
+    const misconfiguredHealth = await call('/health', {}, {});
+    assert.equal(misconfiguredHealth.status, 200);
+    const misconfiguredHealthData = await misconfiguredHealth.json();
+    assert.equal(misconfiguredHealthData.auth_configured, false);
+    assert.equal(misconfiguredHealthData.auth_required, true);
+    assert.equal(misconfiguredHealthData.auth_mode, 'misconfigured');
+    assert.equal(misconfiguredHealthData.setup.status, 'auth_not_configured');
+    assert.equal(misconfiguredHealthData.providers.duckduckgo, true);
+
+    const openHealth = await call('/health', {}, { SEARCH_GATEWAY_ALLOW_OPEN: 'true' });
     assert.equal(openHealth.status, 200);
     const openHealthData = await openHealth.json();
     assert.equal(openHealthData.auth_configured, false);
     assert.equal(openHealthData.auth_required, false);
     assert.equal(openHealthData.auth_mode, 'open');
-    assert.equal(openHealthData.setup.status, 'zero_config_open');
-    assert.equal(openHealthData.providers.duckduckgo, true);
+    assert.equal(openHealthData.setup.status, 'explicit_open');
   }
 
-  // auth is enforced when SEARCH_GATEWAY_TOKEN is configured, and zero-config open mode works without it.
+  // auth is enforced by default; explicit open mode only works when SEARCH_GATEWAY_ALLOW_OPEN=true.
   {
     const res = await call('/search', {
       method: 'POST',
@@ -140,11 +148,19 @@ try {
     });
     assert.equal(fetchRes.status, 401);
 
-    const openSearchRes = await call('/search', {
+    const missingTokenRes = await call('/search', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ query: 'test', provider: 'google' }),
     }, {});
+    assert.equal(missingTokenRes.status, 503);
+    assert.equal((await missingTokenRes.json()).error, 'SEARCH_GATEWAY_TOKEN is required but not configured');
+
+    const openSearchRes = await call('/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'test', provider: 'google' }),
+    }, { SEARCH_GATEWAY_ALLOW_OPEN: 'true' });
     assert.equal(openSearchRes.status, 400);
     assert.equal((await openSearchRes.json()).error, 'unsupported provider: google');
 
@@ -152,7 +168,7 @@ try {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url: 'not-a-url' }),
-    }, {});
+    }, { SEARCH_GATEWAY_ALLOW_OPEN: 'true' });
     assert.equal(openFetchRes.status, 400);
   }
 

@@ -1,6 +1,6 @@
 # One-click Cloudflare deployment
 
-This repository is designed for Cloudflare's Deploy to Workers flow with **zero mandatory configuration**.
+This repository is designed for Cloudflare's Deploy to Workers flow with **zero mandatory deploy-time configuration**. Runtime search/fetch endpoints are still secure by default: configure `SEARCH_GATEWAY_TOKEN` after deployment, or explicitly set `SEARCH_GATEWAY_ALLOW_OPEN=true` only for local/temporary development.
 
 ## Deploy button
 
@@ -30,7 +30,7 @@ Expected Deploy to Workers settings:
 | Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
 | Config file | `wrangler.json` |
-| Required secrets | none |
+| Required deploy-time secrets | none; configure `SEARCH_GATEWAY_TOKEN` after deploy before using `/search` or `/fetch` |
 
 If the dashboard asks for the repository URL manually, use the repository root URL:
 
@@ -40,20 +40,20 @@ https://github.com/EitanWong/search-gateway
 
 ## Default auth mode
 
-To make one-click deployment real, the Worker defaults to open mode when no `SEARCH_GATEWAY_TOKEN` secret exists:
+The Worker is secure by default. If no `SEARCH_GATEWAY_TOKEN` secret exists, authenticated endpoints are not opened accidentally:
 
 ```json
 {
-  "auth_mode": "open",
+  "auth_mode": "misconfigured",
   "setup": {
-    "status": "zero_config_open"
+    "status": "auth_not_configured"
   }
 }
 ```
 
-That means `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` are usable immediately after deployment.
+That means `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` return `503` until you configure a token.
 
-For production or public endpoints, switch to bearer auth by setting a Worker secret:
+Set a Worker secret before using the endpoint:
 
 ```bash
 openssl rand -hex 32
@@ -63,8 +63,17 @@ npx wrangler secret put SEARCH_GATEWAY_TOKEN
 After that, requests must include:
 
 ```http
-Authorization: Bearer <your-token>
+Authorization: Bearer ***
 ```
+
+Open mode is still available for local or temporary development, but it must be explicit:
+
+```bash
+npx wrangler secret put SEARCH_GATEWAY_ALLOW_OPEN
+# enter: true
+```
+
+Do not use open mode for a personal production service.
 
 ## Optional provider configuration
 
@@ -87,15 +96,7 @@ Public health check:
 curl https://<your-worker>.<your-subdomain>.workers.dev/health
 ```
 
-Zero-config search:
-
-```bash
-curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Cloudflare Workers docs","limit":3,"provider":"auto"}'
-```
-
-Bearer-auth search after `SEARCH_GATEWAY_TOKEN` is configured:
+Bearer-auth search:
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/search \

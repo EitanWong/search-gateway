@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Use the repository root as the Cloudflare one-click deployment target with minimal `wrangler.json`, Cloudflare template metadata, build/deploy command prefills, open-by-default auth mode, and optional bearer-token hardening.
+- Use the repository root as the Cloudflare one-click deployment target with minimal `wrangler.json`, Cloudflare template metadata, build/deploy command prefills, secure-by-default bearer-token auth, and explicit open-mode opt-in for development.
 - Add Agent-oriented `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` behavior.
 - Add machine-readable errors and suggested recovery actions.
 - Add multilingual ranking signals, source credibility, freshness, domain diversity, and bounded provider consensus scoring.

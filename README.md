@@ -4,7 +4,7 @@ Cloudflare Worker search/fetch gateway for agents running in restricted networks
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
 
-The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button is zero-config by default: it deploys an open no-key gateway first, then you can optionally set `SEARCH_GATEWAY_TOKEN` to require bearer auth.
+The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button imports the Worker with zero mandatory deploy-time fields, while runtime search/fetch endpoints are secure by default: set `SEARCH_GATEWAY_TOKEN` after deployment, or explicitly opt into development-only open mode with `SEARCH_GATEWAY_ALLOW_OPEN=true`.
 
 ## Documentation
 
@@ -20,11 +20,11 @@ The local agent talks to one stable endpoint; the Worker handles provider choice
 
 ## Endpoints
 
-- `GET /health` — public health/capability check. In zero-config mode it also reports `auth_mode: "open"`; after `SEARCH_GATEWAY_TOKEN` is configured it reports secure bearer mode only to authenticated callers.
-- `POST /search` — search endpoint. Open in zero-config mode; bearer-authenticated after `SEARCH_GATEWAY_TOKEN` is configured.
-- `POST /fetch` — page text extraction endpoint. Open in zero-config mode; bearer-authenticated after `SEARCH_GATEWAY_TOKEN` is configured.
+- `GET /health` — public health/capability check. Without `SEARCH_GATEWAY_TOKEN`, it reports `auth_mode: "misconfigured"`; with `SEARCH_GATEWAY_ALLOW_OPEN=true`, it reports explicit development open mode.
+- `POST /search` — search endpoint. Requires bearer auth by default. Without `SEARCH_GATEWAY_TOKEN`, it returns `503` unless `SEARCH_GATEWAY_ALLOW_OPEN=true` is explicitly configured.
+- `POST /fetch` — page text extraction endpoint. Requires bearer auth by default. Without `SEARCH_GATEWAY_TOKEN`, it returns `503` unless `SEARCH_GATEWAY_ALLOW_OPEN=true` is explicitly configured.
 
-When `SEARCH_GATEWAY_TOKEN` is configured, authenticated requests require:
+Authenticated requests require:
 
 ```http
 Authorization: Bearer <gateway-token>
@@ -308,7 +308,6 @@ After deploy, set Hermes profile env:
 
 ```env
 SEARCH_GATEWAY_URL=https://search-gateway.<your-subdomain>.workers.dev
-# Optional. Only set this if you configured SEARCH_GATEWAY_TOKEN on the Worker.
 SEARCH_GATEWAY_TOKEN=<your-worker-secret>
 ```
 
@@ -318,8 +317,8 @@ Then restart Hermes / gateway so the plugin sees the env vars. The Hermes plugin
 
 - Prefer SearXNG for a no-paid-key, open-source metasearch layer. Self-hosting is more reliable than public instances; the instance must enable JSON output (`format=json`).
 - `auto` is designed to keep web search functional with no paid provider keys: DuckDuckGo HTML is tried before Bing HTML.
-- The one-click deployment intentionally starts in `auth_mode: "open"` so Cloudflare can deploy it with zero mandatory form fields. Set `SEARCH_GATEWAY_TOKEN` as a Worker secret to switch `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` to bearer-auth mode.
-- Keep open mode only for personal/testing deployments or behind Cloudflare Access/rate limits. For public production use, configure `SEARCH_GATEWAY_TOKEN` and Cloudflare dashboard rate limiting.
+- `SEARCH_GATEWAY_TOKEN` is required by default. Without it, `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` return `503` instead of becoming an accidental public proxy.
+- Open mode exists only as an explicit opt-in: set `SEARCH_GATEWAY_ALLOW_OPEN=true` for local/temporary development. Do not use open mode for a personal production service; configure `SEARCH_GATEWAY_TOKEN` and Cloudflare dashboard rate limiting.
 - Do not commit `.dev.vars`, `.env`, or real secrets.
 - `/search` validates configured `SEARXNG_URL` and `DUCKDUCKGO_ENDPOINT` with the same private-host checks used by `/fetch`, so a compromised config cannot turn the Worker into an internal-network probe. Like most Worker-side URL guards, this blocks literal private hosts/IPs but cannot pre-resolve arbitrary public hostnames to prevent DNS-rebinding style answers.
 - `/fetch` blocks localhost/private IP literals, URL credentials, localhost-style trailing-dot names, link-local/ULA IPv6, IPv4-mapped IPv6, CGNAT/reserved IPv4 ranges, and common non-public literal address forms to reduce SSRF risk.

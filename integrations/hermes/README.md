@@ -12,12 +12,11 @@ cp integrations/hermes/search-gateway/__init__.py \
   ~/.hermes/profiles/<profile>/plugins/search-gateway/__init__.py
 ```
 
-Set the gateway URL for the Hermes process. `SEARCH_GATEWAY_TOKEN` is only needed if you configured that Worker secret after deployment:
+Set the gateway URL and bearer token for the Hermes process. `SEARCH_GATEWAY_TOKEN` is required by default; the Worker only allows unauthenticated access when explicitly deployed with `SEARCH_GATEWAY_ALLOW_OPEN=true` for local/temporary development.
 
 ```bash
 export SEARCH_GATEWAY_URL=https://<your-worker>.<your-subdomain>.workers.dev
-# Optional secure mode:
-# export SEARCH_GATEWAY_TOKEN=<your-worker-secret>
+export SEARCH_GATEWAY_TOKEN=<your-worker-secret>
 ```
 
 Restart Hermes so the plugin can register these tools:
