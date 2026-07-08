@@ -52,7 +52,7 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-For repository-root development, `wrangler.toml` is intentionally minimal. For Cloudflare Dashboard one-click import, use the isolated `deploy-template/` subdirectory, which contains a strict `wrangler.jsonc` and no extra repository files.
+The repository root is the Cloudflare Dashboard one-click import target. `wrangler.toml` is intentionally minimal so both Dashboard import and normal `wrangler deploy` use the same deployable Worker config. The `deploy-template/` directory is only a local/CI compatibility fixture, not the public Deploy Button target.
 
 Default values:
 

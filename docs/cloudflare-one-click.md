@@ -12,12 +12,12 @@ The button opens Cloudflare's Workers deploy flow and imports this public GitHub
 
 ## What should be prefilled
 
-Cloudflare reads the isolated `deploy-template/` subdirectory. This avoids Dashboard importer bugs caused by scanning a full development repository. The deploy template contains:
+Cloudflare imports the repository root. The root intentionally contains the deployable Worker surface:
 
-- `wrangler.jsonc` — JSONC Wrangler config with `$schema`, Worker name, entrypoint, conservative compatibility date, and default vars.
+- `wrangler.toml` — minimal Worker config with Worker name, entrypoint, conservative compatibility date, and default vars.
 - `src/index.js` — Worker entrypoint.
 - `package.json` / `package-lock.json` — reproducible npm install.
-- `npm run build` — syntax/build validation.
+- `npm run build` — minimal syntax/build validation.
 - `npm run deploy` — deploy command.
 
 Expected Deploy to Workers settings:
@@ -29,7 +29,7 @@ Expected Deploy to Workers settings:
 | Install command | `npm ci` |
 | Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
-| Config file | `wrangler.jsonc` |
+| Config file | `wrangler.toml` |
 | Required secrets | none |
 
 If the dashboard asks for the repository URL manually, use the repository root URL:

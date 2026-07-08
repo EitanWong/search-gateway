@@ -276,7 +276,7 @@ Use the button at the top of this README. The default deployment requires no sec
 
 - build command: `npm run build`
 - deploy command: `npm run deploy`
-- Worker config: `deploy-template/wrangler.jsonc`
+- Worker config: root `wrangler.toml`
 - default search: no-key DuckDuckGo/Bing HTML fallbacks
 - default auth mode: `open`
 
