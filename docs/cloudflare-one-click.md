@@ -5,7 +5,7 @@ This repository is designed for Cloudflare's Deploy to Workers flow with **zero 
 ## Deploy button
 
 ```md
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway/tree/main/deploy-template)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
 ```
 
 The button opens Cloudflare's Workers deploy flow and imports this public GitHub repository.
@@ -24,7 +24,7 @@ Expected Deploy to Workers settings:
 
 | Setting | Expected value |
 |---|---|
-| Repository | `https://github.com/EitanWong/search-gateway/tree/main/deploy-template` |
+| Repository | `https://github.com/EitanWong/search-gateway` |
 | Worker name | `search-gateway` |
 | Install command | `npm ci` |
 | Build command | `npm run build` |
@@ -32,10 +32,10 @@ Expected Deploy to Workers settings:
 | Config file | `wrangler.jsonc` |
 | Required secrets | none |
 
-If the dashboard asks for the repository URL manually, use the subdirectory URL:
+If the dashboard asks for the repository URL manually, use the repository root URL:
 
 ```text
-https://github.com/EitanWong/search-gateway/tree/main/deploy-template
+https://github.com/EitanWong/search-gateway
 ```
 
 ## Default auth mode
@@ -110,8 +110,8 @@ If you do not use the button:
 
 1. Go to Cloudflare Dashboard → Workers & Pages.
 2. Create application / Worker from GitHub repository.
-3. Enter `https://github.com/EitanWong/search-gateway/tree/main/deploy-template`.
-4. Use `wrangler.jsonc` if the dashboard asks for a config file.
+3. Enter `https://github.com/EitanWong/search-gateway`.
+4. Use `wrangler.toml` if the dashboard asks for a config file.
 5. Install command: `npm ci`.
 6. Build command: `npm run build`.
 7. Deploy command: `npm run deploy`.
@@ -128,3 +128,7 @@ To enable it, set these GitHub repository secrets:
 - `CLOUDFLARE_ACCOUNT_ID`
 
 Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are configured on the Cloudflare Worker, not in this repository.
+
+## Dashboard importer compatibility note
+
+Use the repository root URL for Deploy to Cloudflare. Although `create-cloudflare` can work with remote templates, Cloudflare Dashboard import paths are more reliable when the Deploy Button points at the repository root. The root contains the deployable Worker config (`wrangler.toml`), package scripts, and Cloudflare template metadata. The `deploy-template/` directory is kept only as a minimal local/CI compatibility fixture, not as the public Deploy Button target.
