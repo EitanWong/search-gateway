@@ -22,9 +22,9 @@
     "ranking:diff": "node tests/search-ranking-diff.mjs",
     "test:live": "node tests/live-smoke.mjs",
     "test:ci": "npm run check && npm test && npm run test:search-quality && python3 tests/test-plugin.py && python3 -m py_compile tests/test-plugin.py && npm run dry-run && npm run test:deploy-template",
-    "dev": "npx wrangler dev --local --ip 127.0.0.1 --port 8787",
-    "deploy": "npx wrangler deploy",
-    "dry-run": "npx wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8787",
+    "deploy": "wrangler deploy",
+    "dry-run": "wrangler deploy --dry-run --outdir dist",
     "build": "node --check src/index.js",
     "test:deploy-template": "cd deploy-template && npm ci && npm run dry-run"
   },
