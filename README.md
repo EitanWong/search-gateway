@@ -203,6 +203,7 @@ See [integrations/hermes/README.md](integrations/hermes/README.md).
 ## Release Strategy
 
 - `main` = latest stable version and one-click deploy source.
+- Current iteration line is `0.1.x`; use patch releases for backwards-compatible UX, deployment, docs, and hardening work.
 - No long-lived `release/*` branch.
 - Use scoped feature/dev branches: `feat/*`, `fix/*`, `docs/*`, `chore/*`, `hotfix/*`, optional `dev` for integration.
 - Tags/releases are milestone snapshots and release-note carriers, not the primary deploy channel.

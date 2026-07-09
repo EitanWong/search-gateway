@@ -52,6 +52,8 @@ npm run test:search-quality
 
 The source of truth for deployed users is `main`. `main` always points at the latest stable version and is the default upstream target for the user update workflow.
 
+Current iteration line: `0.1.x`. Use patch releases (`v0.1.1`, `v0.1.2`, ...) for deploy-template lifecycle work, documentation polish, setup UX, provider/ranking fixes, and backwards-compatible hardening. Reserve `0.2.0` for a clear capability step-change or compatibility-impacting behavior change.
+
 `package.json` and `deploy-template/package.json` carry a metadata version surfaced by `GET /health.version`. Bump them when user-visible runtime behavior, deploy flow, or configuration defaults change.
 
 Git tags/releases are professional milestone records, not a separate release branch and not the primary deploy channel. They are useful for auditability, rollback references, and human-readable upgrade notes.
@@ -59,8 +61,9 @@ Git tags/releases are professional milestone records, not a separate release bra
 Recommended tag format:
 
 ```text
-v0.2.0
-v0.2.1
+v0.1.0
+v0.1.1
+v0.1.2
 ```
 
 Release notes should include:
