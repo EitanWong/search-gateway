@@ -14,6 +14,12 @@ Do not commit real credentials. Use Cloudflare Worker secrets for:
 
 - `SEARCH_GATEWAY_TOKEN`
 - `SEARXNG_URL` if private
+- `ZHIPU_API_KEY`
+- `BOCHA_API_KEY`
+- `COHERE_API_KEY`
+- `JINA_API_KEY`
+- `VOYAGE_API_KEY`
+- `SILICONFLOW_API_KEY`
 - `BRAVE_SEARCH_API_KEY`
 - `SERPER_API_KEY`
 - `TAVILY_API_KEY`

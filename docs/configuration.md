@@ -30,7 +30,7 @@ This makes one-click deployment immediately usable without mandatory secrets.
 | Name | Type | Default | Values | Description |
 |---|---|---|---|---|
 | `SEARCH_GATEWAY_MODE` | Variable | `public` | `public`, `private` | Main auth mode. Public mode allows anyone with the URL to use search/fetch. Private mode requires `SEARCH_GATEWAY_TOKEN`. Aliases accepted by code: `open` → public; `bearer`, `secure` → private. |
-| `SEARCH_GATEWAY_TOKEN` | Secret | unset | random string | Required only when `SEARCH_GATEWAY_MODE=private`. Requests must include `Authorization: Bearer <token>`. |
+| `SEARCH_GATEWAY_TOKEN` | Secret | unset | random string | Required only when `SEARCH_GATEWAY_MODE=private`. Send it in the HTTP `Authorization` bearer header. |
 | `SEARCH_GATEWAY_ALLOW_OPEN` | Variable | unset | `true` | Backward-compatible legacy opt-in for public mode. Prefer `SEARCH_GATEWAY_MODE=public` in new deployments. |
 
 ### Public mode
@@ -71,7 +71,7 @@ Authorization: Bearer <token>
 With `provider: "auto"`, configured providers are tried before no-key fallbacks:
 
 ```text
-SearXNG → Brave → Serper → Tavily → DuckDuckGo HTML → Bing HTML
+SearXNG → Zhipu → Bocha Web → Bocha AI → Brave → Serper → Tavily → DuckDuckGo HTML → Bing HTML
 ```
 
 If no paid provider keys are configured, the gateway still works through DuckDuckGo/Bing HTML where reachable.
@@ -83,6 +83,25 @@ If no paid provider keys are configured, the gateway still works through DuckDuc
 | `SEARXNG_CATEGORIES` | Variable | Optional | SearXNG categories. Default: `general`. |
 | `SEARXNG_LANGUAGE` | Variable | Optional | SearXNG language. Default: request language or `auto`. |
 | `SEARXNG_SAFESEARCH` | Variable | Optional | SearXNG safesearch. Default: `0`. |
+| `ZHIPU_API_KEY` | Secret | Optional | Zhipu AI Web Search API key. Enables `provider: "zhipu"` and participates in `auto`. SDK-style `id.secret` keys are converted to the required short-lived JWT in the Worker. |
+| `ZHIPU_SEARCH_ENGINE` | Variable | Optional | Zhipu engine. Default: `search_pro`; alternatives include `search_pro_sogou` and `search_pro_quark`. |
+| `ZHIPU_CONTENT_SIZE` | Variable | Optional | Zhipu content size. Default: `medium`; set `high` for longer snippets. |
+| `ZHIPU_SEARCH_DOMAIN_FILTER` | Variable | Optional | Optional Zhipu domain filter such as `www.example.com`. |
+| `BOCHA_API_KEY` | Secret | Optional | Bocha API key. Enables `provider: "bocha"` for Web Search and `provider: "bocha_ai"` for AI Search; both participate in `auto`. |
+| `BOCHA_SUMMARY` | Variable | Optional | Bocha summary flag. Default: `false`, matching Bocha's API default. Set `true` for longer summaries. |
+| `BOCHA_INCLUDE` | Variable | Optional | Optional Bocha include domain filter. Separate up to 100 root/subdomains with `|` or `,`, for example `qq.com|m.163.com`. |
+| `BOCHA_EXCLUDE` | Variable | Optional | Optional Bocha exclude domain filter. Separate up to 100 root/subdomains with `|` or `,`, for example `qq.com|m.163.com`. |
+| `BOCHA_AI_ANSWER` | Variable | Optional | Bocha AI Search answer flag. Default: `false`. Set `true` to let Bocha generate answer/follow-up messages; `/search` still only returns normalized `source/webpage` results. |
+| `BOCHA_RERANK_MODEL` | Variable | Optional | Default model for `/rerank`. Default: `gte-rerank`; Bocha semantic reranker CN/EN models may require invite access. |
+| `/balance` | Endpoint | Optional | Generic provider balance endpoint. Currently supports `provider: "bocha"` with `BOCHA_API_KEY`. |
+| `COHERE_API_KEY` | Secret | Optional | Cohere Rerank API key. Enables `cohere_rerank`. |
+| `COHERE_RERANK_MODEL` | Variable | Optional | Cohere rerank model. Default: `rerank-v3.5`. |
+| `JINA_API_KEY` | Secret | Optional | Jina AI Reranker API key. Enables `jina_rerank`. |
+| `JINA_RERANK_MODEL` | Variable | Optional | Jina rerank model. Default: `jina-reranker-v3`. |
+| `VOYAGE_API_KEY` | Secret | Optional | Voyage AI Rerank API key. Enables `voyage_rerank`. |
+| `VOYAGE_RERANK_MODEL` | Variable | Optional | Voyage rerank model. Default: `rerank-2.5`. |
+| `SILICONFLOW_API_KEY` | Secret | Optional | SiliconFlow Rerank API key. Enables `siliconflow_rerank`. |
+| `SILICONFLOW_RERANK_MODEL` | Variable | Optional | SiliconFlow rerank model. Default: `BAAI/bge-reranker-v2-m3`. |
 | `BRAVE_SEARCH_API_KEY` | Secret | Optional | Brave Search API key. Enables `provider: "brave"` and participates in `auto`. |
 | `SERPER_API_KEY` | Secret | Optional | Serper API key. Enables `provider: "serper"` and participates in `auto`. |
 | `TAVILY_API_KEY` | Secret | Optional | Tavily API key. Enables `provider: "tavily"` and participates in `auto`. |
@@ -101,6 +120,8 @@ Rate limiting is optional and requires a KV binding.
 | `SEARCH_RATE_LIMIT_PER_MINUTE` | Variable | `60` | Maximum requests per IP/path/minute when KV rate limiting is configured. |
 
 Without a KV binding, rate limiting is disabled.
+
+For Bocha provider pricing, resource packages, and account-tier QPS/QPM/QPD limits, see [Bocha pricing and rate limits](bocha-pricing.md). Set `SEARCH_RATE_LIMIT_PER_MINUTE` conservatively when exposing a Worker publicly; Bocha Tier 0 is only `30 QPM`.
 
 Example `wrangler.toml` binding:
 
@@ -228,7 +249,8 @@ Private mode without token:
   "provider": "auto",
   "strategy": "fallback",
   "freshness": "none",
-  "language": "auto"
+  "language": "auto",
+  "rerank": "auto"
 }
 ```
 
@@ -236,10 +258,42 @@ Private mode without token:
 |---|---|---|---|
 | `query` | required | string | Search query. Max 500 chars. |
 | `limit` | `8` | 1–20 | Max results. |
-| `provider` | `auto` | `auto`, `searxng`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing` | Provider to use. |
+| `provider` | `auto` | `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing` | Provider to use. |
 | `strategy` | `fallback` | `fallback`, `aggregate` | Sequential fallback or parallel merge/ranking. |
 | `freshness` | `none` | `none`, `auto`, `day`, `week`, `month`, `year` | Recency hint. `auto` detects news/latest intent. |
 | `language` | `auto` | `auto`, `zh-CN`, `en-US`, provider-supported values | Language/market hint. |
+| `rerank` | `auto` | `auto`, `false`, comma-separated rerank providers | Optional second-stage rerank. `auto` uses configured rerank providers; use `false` to disable per request. |
+| `rerank_pool` | `limit * 3` | 1–20 | Candidate pool size before rerank. Only used when a rerank provider is configured. |
+
+Supported rerank providers: `bocha_rerank`, `cohere_rerank`, `jina_rerank`, `voyage_rerank`, `siliconflow_rerank`.
+
+### `/rerank`
+
+```json
+{
+  "query": "阿里巴巴2024年的ESG报告",
+  "documents": ["candidate document 1", "candidate document 2"],
+  "top_n": 2,
+  "provider": "auto",
+  "return_documents": false
+}
+```
+
+`documents` accepts 1–50 strings. `provider: "auto"` selects the first configured rerank provider from the supported order.
+
+### `/balance`
+
+`GET` or `POST /balance` returns an account balance for the requested provider.
+
+```bash
+curl "$WORKER_URL/balance?provider=bocha"
+```
+
+```json
+{ "provider": "bocha" }
+```
+
+Currently supported balance provider: `bocha`. Unsupported providers return `400` so future providers can be added without introducing provider-specific endpoints.
 
 ### `/fetch`
 
@@ -327,6 +381,8 @@ Variables/secrets:
 ```env
 SEARCH_GATEWAY_MODE=private
 SEARCH_GATEWAY_TOKEN=<random-token>
+ZHIPU_API_KEY=<secret>
+BOCHA_API_KEY=<secret>
 BRAVE_SEARCH_API_KEY=<secret>
 SERPER_API_KEY=<secret>
 TAVILY_API_KEY=<secret>

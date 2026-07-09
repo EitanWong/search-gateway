@@ -76,6 +76,12 @@ Optional provider secrets can be added after deployment:
 
 ```bash
 npx wrangler secret put SEARXNG_URL
+npx wrangler secret put ZHIPU_API_KEY
+npx wrangler secret put BOCHA_API_KEY
+npx wrangler secret put COHERE_API_KEY
+npx wrangler secret put JINA_API_KEY
+npx wrangler secret put VOYAGE_API_KEY
+npx wrangler secret put SILICONFLOW_API_KEY
 npx wrangler secret put BRAVE_SEARCH_API_KEY
 npx wrangler secret put SERPER_API_KEY
 npx wrangler secret put TAVILY_API_KEY

@@ -61,6 +61,12 @@ For higher quality, add one or more provider secrets in Cloudflare:
 
 | Secret | Purpose |
 |---|---|
+| `ZHIPU_API_KEY` | Zhipu AI Web Search API |
+| `BOCHA_API_KEY` | Bocha Web Search / AI Search API |
+| `COHERE_API_KEY` | Optional Cohere rerank provider |
+| `JINA_API_KEY` | Optional Jina AI rerank provider |
+| `VOYAGE_API_KEY` | Optional Voyage AI rerank provider |
+| `SILICONFLOW_API_KEY` | Optional SiliconFlow rerank provider |
 | `BRAVE_SEARCH_API_KEY` | Brave Search API |
 | `SERPER_API_KEY` | Google-style Serper API |
 | `TAVILY_API_KEY` | Tavily Search API |
@@ -81,6 +87,10 @@ To enable basic per-IP/per-endpoint rate limiting:
 3. Set `SEARCH_RATE_LIMIT_PER_MINUTE`, for example `60`.
 
 KV rate limiting is best-effort. For serious public exposure, also use Cloudflare dashboard rate limiting or WAF rules.
+
+If you use Bocha on a public Worker, check the upstream account tier. Tier 0 is limited to `1 QPS`, `30 QPM`, and `1000 QPD`; configure `SEARCH_RATE_LIMIT_PER_MINUTE` accordingly. See `docs/bocha-pricing.md` in the full repository for pricing and quota planning.
+
+If any rerank provider is configured, `/search` can use second-stage reranking automatically. Disable it per request with `"rerank": false`, or use `POST /rerank` directly with up to 50 candidate documents.
 
 ## Updating from upstream
 

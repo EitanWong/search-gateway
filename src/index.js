@@ -10,7 +10,9 @@ const MAX_JSON_BODY_CHARS = 16384;
 const MAX_BATCH_JSON_BODY_CHARS = 32768;
 const MAX_QUERY_CHARS = 500;
 const MAX_URL_CHARS = 2048;
-const SEARCH_PROVIDERS = ["searxng", "brave", "serper", "tavily", "duckduckgo", "bing"];
+const MAX_RERANK_DOCUMENTS = 50;
+const SEARCH_PROVIDERS = ["searxng", "zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily", "duckduckgo", "bing"];
+const RERANK_PROVIDERS = ["bocha_rerank", "cohere_rerank", "jina_rerank", "voyage_rerank", "siliconflow_rerank"];
 const NO_KEY_PROVIDERS = new Set(["duckduckgo", "bing"]);
 const SUPPORTED_FRESHNESS = new Set(["none", "auto", "day", "week", "month", "year"]);
 const FETCH_MODES = new Set(["full", "text", "metadata", "chunks"]);
@@ -691,7 +693,7 @@ function setupPage(env) {
   <div class="grid">
     <section class="card"><strong>Mode</strong><br>${mode}${mode === "private" ? (tokenConfigured ? " · token configured" : " · token missing") : " · open access"}</section>
     <section class="card"><strong>Health</strong><br><a href="/health">GET /health</a></section>
-    <section class="card"><strong>Endpoints</strong><br><code>POST /search</code><br><code>POST /fetch</code><br><code>POST /batch_fetch</code><br><code>POST /search_fetch</code></section>
+    <section class="card"><strong>Endpoints</strong><br><code>POST /search</code><br><code>POST /fetch</code><br><code>POST /rerank</code><br><code>GET /balance</code><br><code>POST /batch_fetch</code><br><code>POST /search_fetch</code></section>
   </div>
   <h2>Smoke test</h2>
   <pre>curl -s "$WORKER_URL/health"
@@ -720,11 +722,14 @@ function healthPayload(env, includeConfig = false) {
       health: "/health",
       search: "/search",
       fetch: "/fetch",
+      rerank: "/rerank",
+      balance: "/balance",
       batch_fetch: "/batch_fetch",
       search_fetch: "/search_fetch",
     },
     capabilities: {
       search_strategies: ["fallback", "aggregate"],
+      rerank_providers: RERANK_PROVIDERS,
       canonical_dedupe: true,
       provider_diagnostics: true,
       freshness: ["none", "auto", "day", "week", "month", "year"],
@@ -732,6 +737,11 @@ function healthPayload(env, includeConfig = false) {
       citation_fields: ["published_at", "author", "site_name", "image_url", "retrieved_at"],
       no_key_search: true,
       searxng_json_api: true,
+      zhipu_web_search_api: true,
+      bocha_web_search_api: true,
+      bocha_ai_search_api: true,
+      bocha_rerank_api: true,
+      balance_api: true,
       html_search_fallbacks: ["duckduckgo", "bing"],
       fetch_non_2xx_text: true,
       fetch_content_type_allowlist: true,
@@ -752,6 +762,15 @@ function healthPayload(env, includeConfig = false) {
     ...base,
     providers: {
       searxng: Boolean(env.SEARXNG_URL),
+      zhipu: Boolean(env.ZHIPU_API_KEY),
+      bocha: Boolean(env.BOCHA_API_KEY),
+      bocha_ai: Boolean(env.BOCHA_API_KEY),
+      bocha_rerank: Boolean(env.BOCHA_API_KEY),
+      cohere_rerank: Boolean(env.COHERE_API_KEY),
+      jina_rerank: Boolean(env.JINA_API_KEY),
+      voyage_rerank: Boolean(env.VOYAGE_API_KEY),
+      siliconflow_rerank: Boolean(env.SILICONFLOW_API_KEY),
+      balance: Boolean(env.BOCHA_API_KEY),
       brave: Boolean(env.BRAVE_SEARCH_API_KEY),
       serper: Boolean(env.SERPER_API_KEY),
       tavily: Boolean(env.TAVILY_API_KEY),
@@ -966,8 +985,89 @@ function mergeRankResults(results, query, limit, freshness = "none") {
     .map(({ _rank, _score, _host_provider_count, ...result }) => result);
 }
 
+function isRerankProviderConfigured(provider, env) {
+  if (provider === "bocha_rerank") return Boolean(env.BOCHA_API_KEY);
+  if (provider === "cohere_rerank") return Boolean(env.COHERE_API_KEY);
+  if (provider === "jina_rerank") return Boolean(env.JINA_API_KEY);
+  if (provider === "voyage_rerank") return Boolean(env.VOYAGE_API_KEY);
+  if (provider === "siliconflow_rerank") return Boolean(env.SILICONFLOW_API_KEY);
+  return false;
+}
+
+function configuredRerankProviders(requested, env) {
+  const value = String(requested ?? "auto").toLowerCase();
+  if (["false", "off", "none", "disabled", "0"].includes(value)) return [];
+  if (value === "auto" || value === "true" || value === "1") return RERANK_PROVIDERS.filter((provider) => isRerankProviderConfigured(provider, env));
+  return value.split(",").map((item) => item.trim()).filter(Boolean)
+    .filter((provider) => RERANK_PROVIDERS.includes(provider) && isRerankProviderConfigured(provider, env));
+}
+
+function rerankDocumentForResult(result) {
+  return cleanText([
+    result.title,
+    result.snippet,
+    result.source || result.site_name,
+    result.published_at ? `Published: ${result.published_at}` : "",
+  ].filter(Boolean).join("\n"));
+}
+
+async function rerankProvider(provider, query, results, env) {
+  const documents = results.map(rerankDocumentForResult);
+  return callRerankProvider(provider, query, documents, env, { top_n: results.length, return_documents: false });
+}
+
+function aggregateRerankVotes(results, providerOutputs) {
+  const totals = new Array(results.length).fill(0);
+  const counts = new Array(results.length).fill(0);
+  for (const output of providerOutputs) {
+    const scores = output.results.map((item) => Number(item.relevance_score || 0));
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    const span = max - min;
+    output.results.forEach((item, rank) => {
+      const index = item.index;
+      if (!Number.isInteger(index) || index < 0 || index >= results.length) return;
+      const raw = Number(item.relevance_score || 0);
+      const normalized = span > 0 ? (raw - min) / span : Math.max(0, Math.min(1, raw));
+      const rankSignal = 1 / (rank + 1);
+      totals[index] += (0.8 * normalized) + (0.2 * rankSignal);
+      counts[index] += 1;
+    });
+  }
+  return results.map((result, index) => ({
+    ...result,
+    _base_rank: index,
+    _rerank_score: counts[index] ? totals[index] / providerOutputs.length : 0,
+  })).sort((a, b) => b._rerank_score - a._rerank_score || a._base_rank - b._base_rank);
+}
+
+async function maybeRerankResults(results, query, limit, body, env, warnings) {
+  if (!results.length) return { results, providers_used: [] };
+  const providers = configuredRerankProviders(body.rerank, env);
+  if (!providers.length) return { results: results.slice(0, limit), providers_used: [] };
+  const settled = await Promise.all(providers.map(async (provider) => {
+    try {
+      const output = await rerankProvider(provider, query, results, env);
+      return { provider, output };
+    } catch (error) {
+      return { provider, warning: `${provider}: ${error.message}` };
+    }
+  }));
+  warnings.push(...settled.map((item) => item.warning).filter(Boolean));
+  const successful = settled.filter((item) => item.output?.results?.length > 0);
+  if (!successful.length) return { results: results.slice(0, limit), providers_used: [] };
+  const ranked = aggregateRerankVotes(results, successful.map((item) => item.output));
+  return {
+    results: diversifyResults(ranked, limit).map(({ _base_rank, _rerank_score, ...result }) => ({ ...result, rerank_score: _rerank_score })),
+    providers_used: successful.map((item) => item.provider),
+  };
+}
+
 function isProviderConfigured(provider, env) {
   if (provider === "searxng") return Boolean(env.SEARXNG_URL);
+  if (provider === "zhipu") return Boolean(env.ZHIPU_API_KEY);
+  if (provider === "bocha") return Boolean(env.BOCHA_API_KEY);
+  if (provider === "bocha_ai") return Boolean(env.BOCHA_API_KEY);
   if (provider === "brave") return Boolean(env.BRAVE_SEARCH_API_KEY);
   if (provider === "serper") return Boolean(env.SERPER_API_KEY);
   if (provider === "tavily") return Boolean(env.TAVILY_API_KEY);
@@ -981,6 +1081,9 @@ function configuredProviders(requestedProvider, env) {
 
 async function searchProvider(provider, query, limit, env, options = {}) {
   if (provider === "searxng") return searxngSearch(query, limit, env, options);
+  if (provider === "zhipu") return zhipuSearch(query, limit, env, options);
+  if (provider === "bocha") return bochaSearch(query, limit, env, options);
+  if (provider === "bocha_ai") return bochaAiSearch(query, limit, env, options);
   if (provider === "brave") return braveSearch(query, limit, env, options);
   if (provider === "serper") return serperSearch(query, limit, env, options);
   if (provider === "tavily") return tavilySearch(query, limit, env, options);
@@ -1027,6 +1130,174 @@ async function searxngSearch(query, limit, env, options = {}) {
     site_name: r.engine || r.site_name,
     image_url: r.img_src || r.thumbnail,
   }, "searxng"));
+}
+
+function freshnessToZhipu(value) {
+  return {
+    day: "oneDay",
+    week: "oneWeek",
+    month: "oneMonth",
+    year: "oneYear",
+  }[value] || "noLimit";
+}
+
+function freshnessToBocha(value) {
+  return {
+    day: "oneDay",
+    week: "oneWeek",
+    month: "oneMonth",
+    year: "oneYear",
+  }[value] || "noLimit";
+}
+
+function bochaPublishedDate(result) {
+  if (result?.datePublished) return result.datePublished;
+  const lastCrawled = String(result?.dateLastCrawled || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(lastCrawled)) {
+    return lastCrawled.replace(/Z$/, "+08:00");
+  }
+  return lastCrawled;
+}
+
+function base64UrlEncode(input) {
+  const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : input;
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function zhipuAuthorization(apiKey) {
+  const value = String(apiKey || "").trim();
+  const parts = value.split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return `Bearer ${value}`;
+  const now = Date.now();
+  const header = { alg: "HS256", sign_type: "SIGN" };
+  const payload = { api_key: parts[0], exp: now + 210 * 1000, timestamp: now };
+  const encoder = new TextEncoder();
+  const signingInput = `${base64UrlEncode(encoder.encode(JSON.stringify(header)))}.${base64UrlEncode(encoder.encode(JSON.stringify(payload)))}`;
+  const key = await crypto.subtle.importKey("raw", encoder.encode(parts[1]), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(signingInput));
+  return `Bearer ${signingInput}.${base64UrlEncode(signature)}`;
+}
+
+async function zhipuSearch(query, limit, env, options = {}) {
+  if (!env.ZHIPU_API_KEY) throw new Error("ZHIPU_API_KEY is not configured");
+  const payload = {
+    search_engine: env.ZHIPU_SEARCH_ENGINE || "search_pro",
+    search_query: query,
+    count: limit,
+    search_recency_filter: freshnessToZhipu(options.freshness),
+    content_size: env.ZHIPU_CONTENT_SIZE || "medium",
+  };
+  if (env.ZHIPU_SEARCH_DOMAIN_FILTER) payload.search_domain_filter = env.ZHIPU_SEARCH_DOMAIN_FILTER;
+  const response = await fetch("https://open.bigmodel.cn/api/paas/v4/web_search", {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: await zhipuAuthorization(env.ZHIPU_API_KEY),
+      "x-source-channel": "search-gateway",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`zhipu search failed: ${response.status}`);
+  const data = await readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, "zhipu");
+  return (data.search_result || []).map((r) => normalizeResult({
+    title: r.title,
+    url: r.link,
+    snippet: r.content,
+    published_at: r.publish_date,
+    site_name: r.media,
+    source: r.media,
+    image_url: r.icon || (Array.isArray(r.images) ? r.images[0] : ""),
+  }, "zhipu"));
+}
+
+async function bochaSearch(query, limit, env, options = {}) {
+  if (!env.BOCHA_API_KEY) throw new Error("BOCHA_API_KEY is not configured");
+  const payload = {
+    query,
+    freshness: freshnessToBocha(options.freshness),
+    summary: String(env.BOCHA_SUMMARY || "false").toLowerCase() === "true",
+    count: limit,
+  };
+  if (env.BOCHA_INCLUDE) payload.include = env.BOCHA_INCLUDE;
+  if (env.BOCHA_EXCLUDE) payload.exclude = env.BOCHA_EXCLUDE;
+  const response = await fetch("https://api.bochaai.com/v1/web-search", {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${env.BOCHA_API_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`bocha search failed: ${response.status}`);
+  const data = await readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, "bocha");
+  return (data.webPages?.value || []).map((r) => normalizeResult({
+    title: r.name,
+    url: r.url,
+    snippet: r.summary || r.snippet,
+    published_at: bochaPublishedDate(r),
+    site_name: r.siteName,
+    source: r.siteName,
+    image_url: r.siteIcon,
+  }, "bocha"));
+}
+
+function parseBochaAiWebpageContent(content) {
+  if (!content) return [];
+  let data;
+  try {
+    data = typeof content === "string" ? JSON.parse(content) : content;
+  } catch {
+    return [];
+  }
+  if (Array.isArray(data?.value)) return data.value;
+  if (Array.isArray(data?.webPages?.value)) return data.webPages.value;
+  if (data?.url || data?.name) return [data];
+  return [];
+}
+
+async function bochaAiSearch(query, limit, env, options = {}) {
+  if (!env.BOCHA_API_KEY) throw new Error("BOCHA_API_KEY is not configured");
+  const payload = {
+    query,
+    freshness: freshnessToBocha(options.freshness),
+    count: limit,
+    answer: String(env.BOCHA_AI_ANSWER || "false").toLowerCase() === "true",
+    stream: false,
+  };
+  if (env.BOCHA_INCLUDE) payload.include = env.BOCHA_INCLUDE;
+  const response = await fetch("https://api.bocha.cn/v1/ai-search", {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${env.BOCHA_API_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`bocha ai search failed: ${response.status}`);
+  const data = await readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, "bocha_ai");
+  if (data.code && data.code !== 200) throw new Error(`bocha ai search failed: ${data.code} ${data.msg || ""}`.trim());
+  const pages = [];
+  for (const message of data.messages || []) {
+    if (message?.role !== "assistant" || message?.type !== "source" || message?.content_type !== "webpage") continue;
+    pages.push(...parseBochaAiWebpageContent(message.content));
+  }
+  return pages.slice(0, limit).map((r) => normalizeResult({
+    title: r.name,
+    url: r.url,
+    snippet: r.summary || r.snippet,
+    published_at: bochaPublishedDate(r),
+    site_name: r.siteName,
+    source: r.siteName,
+    image_url: r.siteIcon,
+  }, "bocha_ai"));
 }
 
 async function braveSearch(query, limit, env, options = {}) {
@@ -1243,11 +1514,14 @@ async function runSearch(body, env) {
   const searchOptions = { freshness, language };
   const warnings = [];
   const providerOrder = configuredProviders(requestedProvider, env);
+  const rerankProviders = configuredRerankProviders(body.rerank, env);
+  const rerankPool = Math.min(MAX_LIMIT, Math.max(limit, Number.parseInt(body.rerank_pool ?? String(limit * 3), 10) || limit));
+  const searchLimit = rerankProviders.length ? rerankPool : limit;
 
   if (strategy === "aggregate") {
     const settled = await Promise.all(providerOrder.map(async (provider) => {
       try {
-        const results = await searchProvider(provider, query, limit, env, searchOptions);
+        const results = await searchProvider(provider, query, searchLimit, env, searchOptions);
         return { provider, results, warning: results.length === 0 ? `${provider}: empty results` : "" };
       } catch (error) {
         return { provider, results: [], warning: `${provider}: ${error.message}` };
@@ -1255,7 +1529,9 @@ async function runSearch(body, env) {
     }));
     warnings.push(...settled.map((item) => item.warning).filter(Boolean));
     const providersUsed = settled.filter((item) => item.results.length > 0).map((item) => item.provider);
-    const results = mergeRankResults(settled.flatMap((item) => item.results), query, limit, freshness);
+    const candidates = mergeRankResults(settled.flatMap((item) => item.results), query, searchLimit, freshness);
+    const reranked = await maybeRerankResults(candidates, query, limit, body, env, warnings);
+    const results = reranked.results;
     return {
       ok: results.length > 0,
       status: results.length > 0 ? 200 : 502,
@@ -1267,6 +1543,7 @@ async function runSearch(body, env) {
       language,
       count: results.length,
       results,
+      ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
       fetched_at: new Date().toISOString(),
       warnings,
       details: warnings,
@@ -1276,7 +1553,9 @@ async function runSearch(body, env) {
 
   for (const provider of providerOrder) {
     try {
-      const results = mergeRankResults(await searchProvider(provider, query, limit, env, searchOptions), query, limit, freshness);
+      const candidates = mergeRankResults(await searchProvider(provider, query, searchLimit, env, searchOptions), query, searchLimit, freshness);
+      const reranked = await maybeRerankResults(candidates, query, limit, body, env, warnings);
+      const results = reranked.results;
       if (results.length > 0) {
         return {
           ok: true,
@@ -1287,6 +1566,7 @@ async function runSearch(body, env) {
           language,
           count: results.length,
           results,
+          ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
           fetched_at: new Date().toISOString(),
           warnings,
           details: warnings,
@@ -1623,6 +1903,148 @@ async function runFetch(body, env = {}) {
   return projectFetchResult(result, mode, cacheRequest ? "miss" : "off", body);
 }
 
+async function runBochaBalance(env = {}) {
+  if (!env.BOCHA_API_KEY) return { ok: false, status: 503, error: "BOCHA_API_KEY is not configured" };
+  const response = await fetch("https://api.bocha.cn/v1/fund/remaining", {
+    method: "GET",
+    redirect: "manual",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${env.BOCHA_API_KEY}`,
+    },
+  });
+  if (!response.ok) return { ok: false, status: response.status, error: `bocha balance failed: ${response.status}` };
+  const data = await readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, "bocha");
+  const code = Number(data.code || (data.success ? 200 : 0));
+  if (!data.success || code !== 200) {
+    const status = code === 401 ? 401 : code === 429 ? 429 : code >= 400 ? code : 502;
+    return { ok: false, status, error: `bocha balance failed: ${data.code || code || "unknown"} ${data.msg || ""}`.trim() };
+  }
+  return {
+    ok: true,
+    provider: "bocha",
+    remaining: Number(data.data?.remaining ?? 0),
+    currency: "CNY",
+    unit: "yuan",
+    timestamp: data.timestamp || Date.now(),
+    checked_at: new Date().toISOString(),
+  };
+}
+
+function normalizeBalanceProvider(value) {
+  const provider = String(value || "").trim().toLowerCase();
+  if (!provider) return "";
+  if (provider === "bocha" || provider === "bocha_ai" || provider === "bocha_web") return "bocha";
+  return provider;
+}
+
+async function runBalance(body = {}, env = {}) {
+  const provider = normalizeBalanceProvider(body.provider);
+  if (!provider) return { ok: false, status: 400, error: "provider is required" };
+  if (provider === "bocha") return runBochaBalance(env);
+  return { ok: false, status: 400, error: `unsupported balance provider: ${provider}` };
+}
+async function postRerankJson(provider, url, apiKey, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`${provider} failed: ${response.status}`);
+  return readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, provider);
+}
+
+function normalizeRerankResults(data, documents, returnDocuments) {
+  const items = data.data?.results || data.results || data.data || [];
+  return (Array.isArray(items) ? items : []).map((item) => {
+    const index = Number.isInteger(item.index) ? item.index : Number.parseInt(item.index ?? item.document_index, 10);
+    const result = {
+      index,
+      relevance_score: Number(item.relevance_score ?? item.score ?? item.relevanceScore ?? 0),
+    };
+    if (returnDocuments) {
+      result.document = item.document?.text ?? item.document ?? documents[index] ?? "";
+    }
+    return result;
+  }).filter((item) => Number.isInteger(item.index) && item.index >= 0 && item.index < documents.length);
+}
+
+function rerankModelFor(provider, env, requestedModel) {
+  if (requestedModel) return requestedModel;
+  if (provider === "bocha_rerank") return env.BOCHA_RERANK_MODEL || "gte-rerank";
+  if (provider === "cohere_rerank") return env.COHERE_RERANK_MODEL || "rerank-v3.5";
+  if (provider === "jina_rerank") return env.JINA_RERANK_MODEL || "jina-reranker-v3";
+  if (provider === "voyage_rerank") return env.VOYAGE_RERANK_MODEL || "rerank-2.5";
+  if (provider === "siliconflow_rerank") return env.SILICONFLOW_RERANK_MODEL || "BAAI/bge-reranker-v2-m3";
+  return requestedModel || "";
+}
+
+async function callRerankProvider(provider, query, documents, env, options = {}) {
+  const topN = Math.min(Math.max(Number.parseInt(options.top_n ?? documents.length, 10) || documents.length, 1), documents.length);
+  const returnDocuments = options.return_documents === true;
+  const model = cleanText(rerankModelFor(provider, env, cleanText(options.model || "")));
+  let data;
+  if (provider === "bocha_rerank") {
+    data = await postRerankJson(provider, env.BOCHA_RERANK_ENDPOINT || "https://api.bocha.cn/v1/rerank", env.BOCHA_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+    const code = Number(data.code || 200);
+    if (code !== 200) throw new Error(`${provider} failed: ${data.code} ${data.msg || ""}`.trim());
+  } else if (provider === "cohere_rerank") {
+    data = await postRerankJson(provider, env.COHERE_RERANK_ENDPOINT || "https://api.cohere.com/v2/rerank", env.COHERE_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+  } else if (provider === "jina_rerank") {
+    data = await postRerankJson(provider, env.JINA_RERANK_ENDPOINT || "https://api.jina.ai/v1/rerank", env.JINA_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+  } else if (provider === "voyage_rerank") {
+    data = await postRerankJson(provider, env.VOYAGE_RERANK_ENDPOINT || "https://api.voyageai.com/v1/rerank", env.VOYAGE_API_KEY, { model, query, documents, top_k: topN, return_documents: returnDocuments });
+  } else if (provider === "siliconflow_rerank") {
+    data = await postRerankJson(provider, env.SILICONFLOW_RERANK_ENDPOINT || "https://api.siliconflow.cn/v1/rerank", env.SILICONFLOW_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+  } else {
+    throw new Error(`unsupported rerank provider: ${provider}`);
+  }
+  return {
+    ok: true,
+    provider,
+    model: data.data?.model || data.model || model,
+    results: normalizeRerankResults(data, documents, returnDocuments),
+    log_id: data.log_id || data.id || "",
+  };
+}
+
+async function runRerank(body, env = {}) {
+  const query = cleanText(body.query || "");
+  if (!query) return { ok: false, status: 400, error: "query is required" };
+  if (query.length > MAX_QUERY_CHARS) return { ok: false, status: 400, error: `query too long; max ${MAX_QUERY_CHARS} chars` };
+  const documents = Array.isArray(body.documents) ? body.documents.map((d) => cleanText(d)).filter(Boolean) : [];
+  if (!documents.length) return { ok: false, status: 400, error: "documents must be a non-empty array of strings" };
+  if (documents.length > MAX_RERANK_DOCUMENTS) return { ok: false, status: 400, error: `documents too many; max ${MAX_RERANK_DOCUMENTS}` };
+  const provider = String(body.provider || body.rerank_provider || "auto").toLowerCase();
+  const providers = configuredRerankProviders(provider, env);
+  if (!providers.length) return { ok: false, status: 503, error: provider === "auto" ? "no rerank provider configured" : `rerank provider is not configured: ${provider}` };
+  try {
+    const output = await callRerankProvider(providers[0], query, documents, env, {
+      top_n: body.top_n,
+      return_documents: body.return_documents === true || String(body.return_documents || "").toLowerCase() === "true",
+      model: body.model,
+    });
+    return {
+      ok: true,
+      provider: output.provider,
+      model: output.model,
+      query,
+      count: output.results.length,
+      results: output.results,
+      log_id: output.log_id || "",
+      reranked_at: new Date().toISOString(),
+    };
+  } catch (error) {
+    return { ok: false, status: 502, error: error.message };
+  }
+}
+
 async function runBatchFetch(body, env = {}, parentRequestId = requestId()) {
   const requests = Array.isArray(body.requests) ? body.requests : [];
   if (!requests.length) return { ok: false, status: 400, error: "requests must be a non-empty array" };
@@ -1701,15 +2123,21 @@ async function handleRequest(request, env) {
     return json(withAgentMeta({ ok: false, status: 503, error: "SEARCH_GATEWAY_TOKEN is required in private mode" }, request_id), 503);
   }
   if (!isAuthorized(request, env)) return json(withAgentMeta({ ok: false, status: 401, error: "unauthorized" }, request_id), 401);
+  if (url.pathname === "/balance" && request.method === "GET") {
+    const limited = await checkRateLimit(request, env, url.pathname, request_id);
+    if (limited) return limited;
+    const result = withAgentMeta(await runBalance({ provider: url.searchParams.get("provider") }, env), request_id);
+    return json(result, result.status && !result.ok ? result.status : 200);
+  }
   if (request.method !== "POST") return json(withAgentMeta({ ok: false, status: 405, error: "method not allowed" }, request_id), 405);
-  if (["/search", "/fetch", "/batch_fetch", "/search_fetch"].includes(url.pathname)) {
+  if (["/search", "/fetch", "/batch_fetch", "/search_fetch", "/rerank", "/balance"].includes(url.pathname)) {
     const limited = await checkRateLimit(request, env, url.pathname, request_id);
     if (limited) return limited;
   }
 
   let body;
   try {
-    const bodyLimit = ["/batch_fetch", "/search_fetch"].includes(url.pathname) ? MAX_BATCH_JSON_BODY_CHARS : MAX_JSON_BODY_CHARS;
+    const bodyLimit = ["/batch_fetch", "/search_fetch", "/rerank"].includes(url.pathname) ? MAX_BATCH_JSON_BODY_CHARS : MAX_JSON_BODY_CHARS;
     body = await readJson(request, bodyLimit);
   } catch (error) {
     return json(withAgentMeta({ ok: false, status: 400, error: error.message }, request_id), 400);
@@ -1725,6 +2153,14 @@ async function handleRequest(request, env) {
   }
   if (url.pathname === "/fetch") {
     const result = withAgentMeta(await runFetch(body, env), request_id);
+    return json(result, result.status && !result.ok ? result.status : 200);
+  }
+  if (url.pathname === "/rerank") {
+    const result = withAgentMeta(await runRerank(body, env), request_id);
+    return json(result, result.status && !result.ok ? result.status : 200);
+  }
+  if (url.pathname === "/balance") {
+    const result = withAgentMeta(await runBalance(body, env), request_id);
     return json(result, result.status && !result.ok ? result.status : 200);
   }
   if (url.pathname === "/batch_fetch") {
@@ -1745,4 +2181,4 @@ export default {
 };
 
 // Test-only named exports. The deployed Worker HTTP surface is the default fetch handler.
-export const _test = { canonicalizeUrl, cleanText, parseDuckDuckGoResults, parseBingResults, configuredProviders, isTextContentType, normalizeDate, normalizeFreshness, normalizeLanguage, queryTokens, resultScore, mergeRankResults, runSearch, runFetch, safeFetch, handleRequest };
+export const _test = { canonicalizeUrl, cleanText, parseDuckDuckGoResults, parseBingResults, configuredProviders, isTextContentType, normalizeDate, normalizeFreshness, normalizeLanguage, queryTokens, resultScore, mergeRankResults, runSearch, runBalance, runRerank, runFetch, safeFetch, handleRequest };

@@ -97,6 +97,24 @@ Configure non-sensitive options as Cloudflare Variables and sensitive values as 
 | `SEARXNG_CATEGORIES` | Variable | `general` | `general` | SearXNG categories. |
 | `SEARXNG_LANGUAGE` | Variable | request language / `auto` | `auto`, `en`, `zh-CN` | SearXNG language hint. |
 | `SEARXNG_SAFESEARCH` | Variable | `0` | `0`, `1`, `2` | SearXNG safesearch setting. |
+| `ZHIPU_API_KEY` | Secret | unset | API key | Optional Zhipu AI Web Search provider. Supports SDK-style `id.secret` keys. |
+| `ZHIPU_SEARCH_ENGINE` | Variable | `search_pro` | `search_pro`, `search_pro_sogou`, `search_pro_quark` | Zhipu search engine. |
+| `ZHIPU_CONTENT_SIZE` | Variable | `medium` | `medium`, `high` | Zhipu result content size. |
+| `ZHIPU_SEARCH_DOMAIN_FILTER` | Variable | unset | `example.com` | Optional Zhipu domain filter. |
+| `BOCHA_API_KEY` | Secret | unset | API key | Optional Bocha Web Search and Bocha AI Search providers. |
+| `BOCHA_SUMMARY` | Variable | `false` | `true`, `false` | Whether Bocha should include long summaries. Matches Bocha's default `false`. |
+| `BOCHA_INCLUDE` | Variable | unset | `qq.com|m.163.com` | Optional Bocha include domain filter; separate up to 100 root/subdomains with `|` or `,`. |
+| `BOCHA_EXCLUDE` | Variable | unset | `qq.com|m.163.com` | Optional Bocha exclude domain filter; separate up to 100 root/subdomains with `|` or `,`. |
+| `BOCHA_AI_ANSWER` | Variable | `false` | `true`, `false` | Whether `provider: "bocha_ai"` asks Bocha to generate answer/follow-up messages. `/search` still returns normalized webpage results only. |
+| `BOCHA_RERANK_MODEL` | Variable | `gte-rerank` | `gte-rerank` | Default model for `/rerank`. Bocha semantic reranker CN/EN models may require invite access. |
+| `COHERE_API_KEY` | Secret | unset | API key | Optional Cohere Rerank provider. |
+| `COHERE_RERANK_MODEL` | Variable | `rerank-v3.5` | model id | Cohere rerank model. |
+| `JINA_API_KEY` | Secret | unset | API key | Optional Jina AI Reranker provider. |
+| `JINA_RERANK_MODEL` | Variable | `jina-reranker-v3` | model id | Jina rerank model. |
+| `VOYAGE_API_KEY` | Secret | unset | API key | Optional Voyage AI Rerank provider. |
+| `VOYAGE_RERANK_MODEL` | Variable | `rerank-2.5` | model id | Voyage rerank model. |
+| `SILICONFLOW_API_KEY` | Secret | unset | API key | Optional SiliconFlow rerank provider. |
+| `SILICONFLOW_RERANK_MODEL` | Variable | `BAAI/bge-reranker-v2-m3` | model id | SiliconFlow rerank model. |
 | `BRAVE_SEARCH_API_KEY` | Secret | unset | API key | Optional Brave Search provider. |
 | `SERPER_API_KEY` | Secret | unset | API key | Optional Serper provider. |
 | `TAVILY_API_KEY` | Secret | unset | API key | Optional Tavily provider. |
@@ -118,6 +136,8 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 | `/health` | `GET` | Version, capabilities, setup status | Public; config details shown when safe/authenticated |
 | `/search` | `POST` | Search using provider fallback or aggregation | Public by default; bearer in private mode |
 | `/fetch` | `POST` | Fetch and extract readable page text/metadata | Public by default; bearer in private mode |
+| `/rerank` | `POST` | Rerank up to 50 documents with Bocha Semantic Reranker | Public by default; bearer in private mode |
+| `/balance` | `GET` or `POST` | Query a provider account balance | Public by default; bearer in private mode |
 | `/batch_fetch` | `POST` | Fetch up to 10 URLs in one call | Public by default; bearer in private mode |
 | `/search_fetch` | `POST` | Search, then fetch top results in one call | Public by default; bearer in private mode |
 
@@ -134,7 +154,15 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 }
 ```
 
-Providers: `auto`, `searxng`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing`.
+Providers: `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing`.
+
+`bocha` uses Bocha Web Search (`/v1/web-search`) for Bing-compatible web results. `bocha_ai` uses Bocha AI Search (`/v1/ai-search`) and extracts `source/webpage` messages into the same normalized result schema; modal cards, generated answers, and follow-up questions are intentionally ignored by `/search` for compatibility.
+
+Bocha pricing and quota planning notes are in [docs/bocha-pricing.md](docs/bocha-pricing.md). In particular, Tier 0 accounts are limited to `1 QPS`, `30 QPM`, and `1000 QPD`; use `SEARCH_RATE_LIMIT_PER_MINUTE` and Cloudflare rate limiting for public deployments.
+
+Rerank is a second-stage ranking layer for `/search`. When any supported rerank provider is configured, `/search` defaults to `rerank: "auto"`, expands the first-stage candidate pool to `min(20, limit * 3)`, calls configured rerank providers, and aggregates their normalized scores. Disable it per request with `"rerank": false` or select providers with `"rerank": "cohere_rerank,jina_rerank"`.
+
+Supported rerank providers: `bocha_rerank`, `cohere_rerank`, `jina_rerank`, `voyage_rerank`, `siliconflow_rerank`. DashScope/Qwen3 Rerank and VikingDB are tracked as future adapters pending verified standalone HTTP request/response shape.
 
 Strategies:
 
@@ -144,6 +172,37 @@ Strategies:
 Freshness: `none`, `auto`, `day`, `week`, `month`, `year`.
 
 Language: `auto`, `zh-CN`, `en-US`, or provider-supported locale/market.
+
+### `/rerank`
+
+```json
+{
+  "query": "阿里巴巴2024年的ESG报告",
+  "documents": ["候选文档1", "候选文档2"],
+  "top_n": 2,
+  "provider": "auto",
+  "model": "gte-rerank",
+  "return_documents": false
+}
+```
+
+Uses the configured rerank provider. `documents` accepts 1–50 strings. Returned `results[]` preserve each item's original `index` and `relevance_score`. `provider: "auto"` picks the first configured provider from the supported provider order; set `provider` explicitly for deterministic vendor choice.
+
+### `/balance`
+
+Pass `provider=bocha` as a query parameter for `GET` or as JSON for `POST`:
+
+```bash
+curl https://<worker>/balance?provider=bocha \
+  -H "Authorization: Bearer <SEARC...KEN>"
+
+curl https://<worker>/balance \
+  -H "Authorization: Bearer <SEARC...KEN>" \
+  -H "content-type: application/json" \
+  -d '{"provider":"bocha"}'
+```
+
+Currently supported balance provider: `bocha`. It uses Bocha's balance API (`https://api.bocha.cn/v1/fund/remaining`) with `BOCHA_API_KEY` and returns `remaining` in CNY yuan, plus the provider timestamp and `checked_at`.
 
 ### `/fetch`
 
@@ -258,6 +317,7 @@ npm run test:live
 - Do not commit `.dev.vars`, `.env`, or real secrets.
 - Optional KV rate limiting is best-effort and not atomic under high burst concurrency; combine it with Cloudflare dashboard rules for serious public exposure.
 - Prefer official search APIs or self-hosted SearXNG for quality; DuckDuckGo/Bing HTML are no-key fallbacks.
+- For Bocha provider costs, resource packages, and QPS/QPM/QPD tiers, see [docs/bocha-pricing.md](docs/bocha-pricing.md).
 
 ## License
 

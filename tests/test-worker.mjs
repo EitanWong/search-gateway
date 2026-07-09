@@ -111,6 +111,9 @@ try {
     });
     assert.equal(authed.status, 200);
     const authedData = await authed.json();
+    assert.equal(authedData.providers.zhipu, false);
+    assert.equal(authedData.providers.bocha, false);
+    assert.equal(authedData.providers.bocha_ai, false);
     assert.equal(authedData.providers.brave, true);
     assert.deepEqual(authedData.provider_order, ['brave', 'serper', 'tavily', 'duckduckgo', 'bing']);
     assert.equal(authedData.auth_configured, true);
@@ -378,6 +381,52 @@ try {
     assert.equal(data.results[0].source, 'example.com');
   }
 
+  // Search rerank uses multiple configured rerank providers and aggregates their votes.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) {
+        return jsonResponse({ web: { results: [
+          { title: 'Generic search gateway result', url: 'https://base.test/a', description: 'thin result' },
+          { title: 'Agent search gateway architecture', url: 'https://best.test/b', description: 'detailed answer about rerank provider aggregation' },
+          { title: 'Unrelated result', url: 'https://noise.test/c', description: 'noise' },
+        ] } });
+      }
+      if (url === 'https://api.cohere.com/v2/rerank') {
+        const payload = JSON.parse(init.body);
+        assert.equal(payload.model, 'rerank-v3.5');
+        assert.equal(payload.query, 'agent search gateway rerank');
+        assert.equal(payload.top_n, 3);
+        assert.equal(payload.documents.length, 3);
+        return jsonResponse({ results: [
+          { index: 0, relevance_score: 0.95 },
+          { index: 1, relevance_score: 0.2 },
+          { index: 2, relevance_score: 0.05 },
+        ] });
+      }
+      if (url === 'https://api.jina.ai/v1/rerank') {
+        const payload = JSON.parse(init.body);
+        assert.equal(payload.model, 'jina-reranker-v3');
+        assert.equal(payload.top_n, 3);
+        return jsonResponse({ results: [
+          { index: 0, relevance_score: 0.90 },
+          { index: 1, relevance_score: 0.4 },
+          { index: 2, relevance_score: 0.1 },
+        ] });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const rerankEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BRAVE_SEARCH_API_KEY: 'brave-key', COHERE_API_KEY: 'cohere-key', JINA_API_KEY: 'jina-key' };
+    const res = await post('/search', { query: 'agent search gateway rerank', provider: 'brave', limit: 2, rerank: 'cohere_rerank,jina_rerank' }, rerankEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.deepEqual(data.rerank_providers_used, ['cohere_rerank', 'jina_rerank']);
+    assert.equal(data.results[0].canonical_url, 'https://best.test/b');
+    assert.ok(data.results[0].rerank_score > data.results[1].rerank_score);
+  }
+
   // aggregate diagnostics are stable in provider order even when providers fail or return empty.
   {
     mockFetch(async (input) => {
@@ -506,6 +555,301 @@ try {
     assert.equal(typeof data.results[0].retrieved_at, 'string');
   }
 
+  // Zhipu Web Search API is a first-class provider and maps search_result entries into normalized results.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      assert.equal(url, 'https://open.bigmodel.cn/api/paas/v4/web_search');
+      assert.equal(init.method, 'POST');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer zhipu-token');
+      assert.equal(init.headers['x-source-channel'], 'search-gateway');
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.search_engine, 'search_pro');
+      assert.equal(payload.search_query, '智谱 联网搜索');
+      assert.equal(payload.count, 3);
+      assert.equal(payload.search_recency_filter, 'oneWeek');
+      assert.equal(payload.content_size, 'medium');
+      return jsonResponse({ search_result: [
+        {
+          title: '智谱联网搜索结果',
+          link: 'https://zhipu-result.test/a?utm_source=x',
+          content: '智谱 Web Search API 摘要',
+          media: '智谱文档',
+          publish_date: '2026-07-01',
+          icon: 'https://zhipu-result.test/icon.png',
+        },
+      ] });
+    });
+
+    const zhipuEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', ZHIPU_API_KEY: 'zhipu-token' };
+    const res = await post('/search', { query: '智谱 联网搜索', provider: 'zhipu', limit: 3, freshness: 'week' }, zhipuEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.provider, 'zhipu');
+    assert.equal(data.results[0].canonical_url, 'https://zhipu-result.test/a');
+    assert.equal(data.results[0].snippet, '智谱 Web Search API 摘要');
+    assert.equal(data.results[0].site_name, '智谱文档');
+    assert.equal(data.results[0].published_at, '2026-07-01T00:00:00.000Z');
+  }
+
+  // Bocha Web Search API is a first-class provider and maps webPages.value entries into normalized results.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      assert.equal(url, 'https://api.bochaai.com/v1/web-search');
+      assert.equal(init.method, 'POST');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer bocha-token');
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.query, '博查 搜索 API');
+      assert.equal(payload.count, 4);
+      assert.equal(payload.freshness, 'oneMonth');
+      assert.equal(payload.summary, true);
+      assert.equal(payload.include, 'example.com|m.example.com');
+      assert.equal(payload.exclude, 'spam.example');
+      return jsonResponse({ webPages: { value: [
+        {
+          name: '博查搜索结果',
+          url: 'https://bocha-result.test/doc?fbclid=x',
+          snippet: '短摘要',
+          summary: '适合 AI Agent 的搜索 API 摘要',
+          siteName: '博查文档',
+          siteIcon: 'https://bocha-result.test/favicon.ico',
+          datePublished: '2026-06-30T12:00:00+08:00',
+        },
+        {
+          name: '博查 LastCrawled 兼容结果',
+          url: 'https://bocha-result.test/last-crawled',
+          snippet: 'fallback date',
+          siteName: '博查文档',
+          dateLastCrawled: '2026-06-29T09:30:00Z',
+        },
+      ] } });
+    });
+
+    const bochaEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token', BOCHA_SUMMARY: 'true', BOCHA_INCLUDE: 'example.com|m.example.com', BOCHA_EXCLUDE: 'spam.example' };
+    const res = await post('/search', { query: '博查 搜索 API', provider: 'bocha', limit: 4, freshness: 'month', rerank: false }, bochaEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.provider, 'bocha');
+    assert.equal(data.results[0].canonical_url, 'https://bocha-result.test/doc');
+    assert.equal(data.results[0].snippet, '适合 AI Agent 的搜索 API 摘要');
+    assert.equal(data.results[0].site_name, '博查文档');
+    assert.equal(data.results[1].published_at, '2026-06-29T01:30:00.000Z');
+  }
+
+  // Bocha summary defaults to false, matching the official API default.
+  {
+    mockFetch(async (input, init) => {
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.summary, false);
+      return jsonResponse({ webPages: { value: [{ name: '默认摘要关闭', url: 'https://bocha-default.test/', snippet: 'ok' }] } });
+    });
+
+    const bochaEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token' };
+    const res = await post('/search', { query: '博查 默认摘要', provider: 'bocha', limit: 2, rerank: false }, bochaEnv);
+    assert.equal(res.status, 200);
+  }
+
+  // Bocha AI Search API maps non-stream source/webpage messages into normalized results.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      assert.equal(url, 'https://api.bocha.cn/v1/ai-search');
+      assert.equal(init.method, 'POST');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer bocha-token');
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.query, '天空为什么是蓝色的');
+      assert.equal(payload.count, 5);
+      assert.equal(payload.freshness, 'noLimit');
+      assert.equal(payload.answer, false);
+      assert.equal(payload.stream, false);
+      assert.equal(payload.include, 'cma.gov.cn');
+      return jsonResponse({
+        code: 200,
+        msg: 'success',
+        conversation_id: 'conv-1',
+        messages: [
+          {
+            role: 'assistant',
+            type: 'source',
+            content_type: 'webpage',
+            content: JSON.stringify({ value: [
+              {
+                name: '天空为什么有不同的颜色 - 中国气象局',
+                url: 'https://www.cma.gov.cn/kppd/example?utm_source=x',
+                snippet: '瑞利散射解释天空颜色',
+                summary: '太阳光进入大气层后发生散射，短波蓝光更容易被散射。',
+                siteName: '中国气象局',
+                siteIcon: 'https://www.cma.gov.cn/favicon.ico',
+                dateLastCrawled: '2024-06-30T11:11:00Z',
+              },
+            ] }),
+          },
+          {
+            role: 'assistant',
+            type: 'source',
+            content_type: 'baike_pro',
+            content: JSON.stringify([{ name: 'ignored modal card' }]),
+          },
+          { role: 'assistant', type: 'answer', content_type: 'text', content: 'ignored answer' },
+        ],
+      });
+    });
+
+    const bochaEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token', BOCHA_INCLUDE: 'cma.gov.cn' };
+    const res = await post('/search', { query: '天空为什么是蓝色的', provider: 'bocha_ai', limit: 5, rerank: false }, bochaEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.provider, 'bocha_ai');
+    assert.equal(data.results.length, 1);
+    assert.equal(data.results[0].canonical_url, 'https://www.cma.gov.cn/kppd/example');
+    assert.equal(data.results[0].snippet, '太阳光进入大气层后发生散射，短波蓝光更容易被散射。');
+    assert.equal(data.results[0].site_name, '中国气象局');
+    assert.equal(data.results[0].published_at, '2024-06-30T03:11:00.000Z');
+  }
+
+  // Bocha Semantic Reranker endpoint validates input and maps scores by original document index.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      assert.equal(url, 'https://api.bocha.cn/v1/rerank');
+      assert.equal(init.method, 'POST');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer bocha-token');
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.model, 'gte-rerank');
+      assert.equal(payload.query, '阿里巴巴2024年的ESG报告');
+      assert.deepEqual(payload.documents, ['第一篇ESG报告内容', '第二篇使命内容']);
+      assert.equal(payload.top_n, 2);
+      assert.equal(payload.return_documents, true);
+      return jsonResponse({
+        code: 200,
+        log_id: 'rerank-log-1',
+        msg: null,
+        data: {
+          model: 'gte-rerank',
+          results: [
+            { index: 0, document: { text: '第一篇ESG报告内容' }, relevance_score: 0.7166407801262326 },
+            { index: 1, document: { text: '第二篇使命内容' }, relevance_score: 0.5658672473649548 },
+          ],
+        },
+      });
+    });
+
+    const env = { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token' };
+    const res = await post('/rerank', {
+      query: '阿里巴巴2024年的ESG报告',
+      documents: ['第一篇ESG报告内容', '第二篇使命内容'],
+      top_n: 2,
+      return_documents: true,
+    }, env);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.provider, 'bocha_rerank');
+    assert.equal(data.model, 'gte-rerank');
+    assert.equal(data.count, 2);
+    assert.equal(data.log_id, 'rerank-log-1');
+    assert.equal(data.results[0].index, 0);
+    assert.equal(data.results[0].document, '第一篇ESG报告内容');
+    assert.equal(data.results[0].relevance_score, 0.7166407801262326);
+  }
+
+  // /rerank can target non-Bocha commercial rerank providers through the same normalized schema.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      assert.equal(url, 'https://api.cohere.com/v2/rerank');
+      assert.equal(init.method, 'POST');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer cohere-token');
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.model, 'rerank-v3.5');
+      assert.equal(payload.query, 'cohere query');
+      assert.deepEqual(payload.documents, ['doc one', 'doc two']);
+      assert.equal(payload.top_n, 1);
+      assert.equal(payload.return_documents, false);
+      return jsonResponse({ results: [{ index: 1, relevance_score: 0.88 }] });
+    });
+
+    const env = { SEARCH_GATEWAY_TOKEN: 'dev-token', COHERE_API_KEY: 'cohere-token' };
+    const res = await post('/rerank', { provider: 'cohere_rerank', query: 'cohere query', documents: ['doc one', 'doc two'], top_n: 1 }, env);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.provider, 'cohere_rerank');
+    assert.equal(data.model, 'rerank-v3.5');
+    assert.equal(data.results[0].index, 1);
+    assert.equal(data.results[0].relevance_score, 0.88);
+  }
+
+  // Rerank guardrails reject missing credentials and too many documents before provider calls.
+  {
+    const missingKey = await post('/rerank', { query: 'q', documents: ['doc'] }, { SEARCH_GATEWAY_TOKEN: 'dev-token' });
+    assert.equal(missingKey.status, 503);
+    assert.equal((await missingKey.json()).error, 'no rerank provider configured');
+
+    const tooMany = await post('/rerank', { query: 'q', documents: Array.from({ length: 51 }, (_, i) => `doc ${i}`) }, { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token' });
+    assert.equal(tooMany.status, 400);
+    assert.equal((await tooMany.json()).error, 'documents too many; max 50');
+  }
+
+  // Balance endpoint dispatches by provider and queries current account remaining funds.
+  {
+    let calls = 0;
+    mockFetch(async (input, init) => {
+      calls += 1;
+      const url = String(input.url || input);
+      assert.equal(url, 'https://api.bocha.cn/v1/fund/remaining');
+      assert.equal(init.method, 'GET');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer bocha-token');
+      return jsonResponse({
+        success: true,
+        code: '200',
+        msg: 'success',
+        data: { remaining: 10820856.78 },
+        timestamp: 1739845090213,
+      });
+    });
+
+    const balanceEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token' };
+    const getRes = await call('/balance?provider=bocha', { method: 'GET', headers: { authorization: 'Bearer dev-token' } }, balanceEnv);
+    assert.equal(getRes.status, 200);
+    const getData = await getRes.json();
+    assert.equal(getData.ok, true);
+    assert.equal(getData.provider, 'bocha');
+    assert.equal(getData.remaining, 10820856.78);
+    assert.equal(getData.currency, 'CNY');
+    assert.equal(getData.unit, 'yuan');
+    assert.equal(getData.timestamp, 1739845090213);
+
+    const postRes = await post('/balance', { provider: 'bocha' }, balanceEnv);
+    assert.equal(postRes.status, 200);
+    assert.equal((await postRes.json()).remaining, 10820856.78);
+    assert.equal(calls, 2);
+  }
+
+  // Balance guardrail rejects missing credentials before provider calls.
+  {
+    const missingKey = await post('/balance', { provider: 'bocha' }, { SEARCH_GATEWAY_TOKEN: 'dev-token' });
+    assert.equal(missingKey.status, 503);
+    assert.equal((await missingKey.json()).error, 'BOCHA_API_KEY is not configured');
+
+    const unsupported = await post('/balance', { provider: 'unknown' }, { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token' });
+    assert.equal(unsupported.status, 400);
+    assert.equal((await unsupported.json()).error, 'unsupported balance provider: unknown');
+
+    const missingProvider = await post('/balance', {}, { SEARCH_GATEWAY_TOKEN: 'dev-token', BOCHA_API_KEY: 'bocha-token' });
+    assert.equal(missingProvider.status, 400);
+    assert.equal((await missingProvider.json()).error, 'provider is required');
+  }
+
   // DuckDuckGo HTML fallback parses no-key search results, including uddg redirect URLs.
   {
     const html = `
@@ -554,6 +898,7 @@ try {
   {
     assert.deepEqual(_test.configuredProviders('auto', {}), ['duckduckgo', 'bing']);
     assert.deepEqual(_test.configuredProviders('auto', { SEARXNG_URL: 'https://searx.test' }), ['searxng', 'duckduckgo', 'bing']);
+    assert.deepEqual(_test.configuredProviders('auto', { ZHIPU_API_KEY: 'zhipu-token', BOCHA_API_KEY: 'bocha-token' }), ['zhipu', 'bocha', 'bocha_ai', 'duckduckgo', 'bing']);
   }
 
   // fallback keeps compatibility and returns warnings from failed/empty earlier providers.
