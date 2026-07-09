@@ -1,8 +1,7 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "search-gateway",
   "main": "src/index.js",
-  "compatibility_date": "2024-01-01",
+  "compatibility_date": "2026-07-01",
   "vars": {
     "BING_MARKET": "en-US",
     "DUCKDUCKGO_LANGUAGE": "en-US"
