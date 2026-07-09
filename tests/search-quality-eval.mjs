@@ -93,7 +93,7 @@ async function search(testCase) {
       query: testCase.query,
       limit: testCase.limit || 5,
       provider: 'auto',
-      strategy: 'aggregate',
+      mode: 'thorough',
       freshness: testCase.freshness || 'none',
       language: testCase.language || 'auto',
     }),

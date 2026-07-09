@@ -96,7 +96,7 @@ SEARCH_SCHEMA = {
         "query": {"type": "string", "description": "Search query."},
         "limit": {"type": "integer", "description": "Max results, default 8, max 20."},
         "provider": {"type": "string", "description": "auto, searxng, brave, serper, tavily, duckduckgo, or bing. Default auto. `auto` works even with zero paid provider keys via DuckDuckGo/Bing HTML fallback."},
-        "strategy": {"type": "string", "description": "fallback for low-cost sequential fallback, or aggregate for parallel multi-provider merge/dedupe/ranking. Default fallback."},
+        "mode": {"type": "string", "description": "fast, balanced, or thorough. Default balanced. fast is sequential/no implicit rerank; balanced parallelizes the first provider wave; thorough aggregates all configured providers."},
         "freshness": {"type": "string", "description": "none, auto, day, week, month, or year. Default none. auto detects recency intent from the query."},
         "language": {"type": "string", "description": "auto, zh-CN, en-US, or provider-supported locale/market. Default auto."},
     },
@@ -145,7 +145,7 @@ SEARCH_FETCH_SCHEMA = {
         "limit": {"type": "integer", "description": "Max search results, default 8, max 20."},
         "fetch_top": {"type": "integer", "description": "How many top search results to fetch, default 3, max 10."},
         "provider": SEARCH_SCHEMA["properties"]["provider"],
-        "strategy": SEARCH_SCHEMA["properties"]["strategy"],
+        "mode": SEARCH_SCHEMA["properties"]["mode"],
         "freshness": SEARCH_SCHEMA["properties"]["freshness"],
         "language": SEARCH_SCHEMA["properties"]["language"],
         "fetch_mode": {
@@ -171,7 +171,7 @@ def register(ctx):
             "query": query,
             "limit": _bounded_int(args.get("limit"), 8, 1, 20),
             "provider": str(args.get("provider", "auto") or "auto"),
-            "strategy": str(args.get("strategy", "fallback") or "fallback"),
+            "mode": str(args.get("mode", "balanced") or "balanced"),
             "freshness": str(args.get("freshness", "none") or "none"),
             "language": str(args.get("language", "auto") or "auto"),
         }
@@ -228,7 +228,7 @@ def register(ctx):
             "limit": _bounded_int(args.get("limit"), 8, 1, 20),
             "fetch_top": _bounded_int(args.get("fetch_top"), 3, 1, 10),
             "provider": str(args.get("provider", "auto") or "auto"),
-            "strategy": str(args.get("strategy", "fallback") or "fallback"),
+            "mode": str(args.get("mode", "balanced") or "balanced"),
             "freshness": str(args.get("freshness", "none") or "none"),
             "language": str(args.get("language", "auto") or "auto"),
             "fetch_mode": fetch_mode,
@@ -246,7 +246,7 @@ def register(ctx):
         description=(
             "Search the web and return ranked results with title, URL, snippet, source, provider diagnostics, "
             "and publication date when available. Use freshness='day' or 'week' for recent events, "
-            "strategy='aggregate' for high-recall research, and follow promising results with fetch_url."
+            "mode='thorough' for high-recall research, mode='fast' for low-cost lookup, and follow promising results with fetch_url."
         ),
     )
     ctx.register_tool(

@@ -13,6 +13,7 @@ const MAX_URL_CHARS = 2048;
 const MAX_RERANK_DOCUMENTS = 50;
 const SEARCH_PROVIDERS = ["searxng", "zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily", "duckduckgo", "bing"];
 const RERANK_PROVIDERS = ["bocha_rerank", "cohere_rerank", "jina_rerank", "voyage_rerank", "siliconflow_rerank"];
+const SEARCH_MODES = new Set(["fast", "balanced", "thorough"]);
 const NO_KEY_PROVIDERS = new Set(["duckduckgo", "bing"]);
 const SUPPORTED_FRESHNESS = new Set(["none", "auto", "day", "week", "month", "year"]);
 const FETCH_MODES = new Set(["full", "text", "metadata", "chunks"]);
@@ -20,6 +21,10 @@ const DEFAULT_CHUNK_CHARS = 1800;
 const MAX_CHUNK_CHARS = 6000;
 const DEFAULT_FETCH_CACHE_TTL_SECONDS = 300;
 const MAX_FETCH_CACHE_TTL_SECONDS = 3600;
+const DEFAULT_SEARCH_PROVIDER_TIMEOUT_MS = 8000;
+const DEFAULT_RERANK_PROVIDER_TIMEOUT_MS = 6000;
+const MIN_PROVIDER_TIMEOUT_MS = 1000;
+const MAX_PROVIDER_TIMEOUT_MS = 30000;
 const FETCH_TEXT_CONTENT_TYPES = [
   "text/",
   "application/json",
@@ -98,6 +103,26 @@ function clampLimit(value, fallback = DEFAULT_LIMIT) {
   const n = Number.parseInt(value ?? fallback, 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(n, 1), MAX_LIMIT);
+}
+
+function providerTimeoutMs(value, fallback) {
+  const n = Number.parseInt(value ?? fallback, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, MIN_PROVIDER_TIMEOUT_MS), MAX_PROVIDER_TIMEOUT_MS);
+}
+
+async function withTimeout(promise, timeoutMs, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function decodeHtmlEntities(input) {
@@ -728,7 +753,7 @@ function healthPayload(env, includeConfig = false) {
       search_fetch: "/search_fetch",
     },
     capabilities: {
-      search_strategies: ["fallback", "aggregate"],
+      search_modes: ["fast", "balanced", "thorough"],
       rerank_providers: RERANK_PROVIDERS,
       canonical_dedupe: true,
       provider_diagnostics: true,
@@ -752,6 +777,8 @@ function healthPayload(env, includeConfig = false) {
         max_fetch_response_bytes: MAX_FETCH_RESPONSE_BYTES,
         max_search_html_bytes: MAX_SEARCH_HTML_BYTES,
         max_provider_json_bytes: MAX_PROVIDER_JSON_BYTES,
+        search_provider_timeout_ms: providerTimeoutMs(env.SEARCH_PROVIDER_TIMEOUT_MS, DEFAULT_SEARCH_PROVIDER_TIMEOUT_MS),
+        rerank_provider_timeout_ms: providerTimeoutMs(env.RERANK_PROVIDER_TIMEOUT_MS, DEFAULT_RERANK_PROVIDER_TIMEOUT_MS),
       },
       ssrf_protection: true,
     },
@@ -1045,9 +1072,10 @@ async function maybeRerankResults(results, query, limit, body, env, warnings) {
   if (!results.length) return { results, providers_used: [] };
   const providers = configuredRerankProviders(body.rerank, env);
   if (!providers.length) return { results: results.slice(0, limit), providers_used: [] };
+  const timeoutMs = providerTimeoutMs(env.RERANK_PROVIDER_TIMEOUT_MS, DEFAULT_RERANK_PROVIDER_TIMEOUT_MS);
   const settled = await Promise.all(providers.map(async (provider) => {
     try {
-      const output = await rerankProvider(provider, query, results, env);
+      const output = await withTimeout(rerankProvider(provider, query, results, env), timeoutMs, provider);
       return { provider, output };
     } catch (error) {
       return { provider, warning: `${provider}: ${error.message}` };
@@ -1496,101 +1524,129 @@ async function bingSearch(query, limit, env, options = {}) {
   return parseBingResults(text).slice(0, limit);
 }
 
-async function runSearch(body, env) {
-  const query = String(body.query || "").trim();
-  if (!query) return { ok: false, status: 400, error: "query is required" };
-  if (query.length > MAX_QUERY_CHARS) return { ok: false, status: 400, error: `query too long; max ${MAX_QUERY_CHARS} chars` };
-  const limit = clampLimit(body.limit);
-  const requestedProvider = String(body.provider || "auto").toLowerCase();
-  if (!isSupportedProvider(requestedProvider)) {
-    return { ok: false, status: 400, error: `unsupported provider: ${requestedProvider}` };
-  }
-  const strategy = String(body.strategy || "fallback").toLowerCase();
-  if (!["fallback", "aggregate"].includes(strategy)) {
-    return { ok: false, status: 400, error: "strategy must be fallback or aggregate" };
-  }
-  const freshness = normalizeFreshness(body.freshness, query);
-  const language = normalizeLanguage(body.language, query);
-  const searchOptions = { freshness, language };
-  const warnings = [];
-  const providerOrder = configuredProviders(requestedProvider, env);
-  const rerankProviders = configuredRerankProviders(body.rerank, env);
-  const rerankPool = Math.min(MAX_LIMIT, Math.max(limit, Number.parseInt(body.rerank_pool ?? String(limit * 3), 10) || limit));
-  const searchLimit = rerankProviders.length ? rerankPool : limit;
-
-  if (strategy === "aggregate") {
-    const settled = await Promise.all(providerOrder.map(async (provider) => {
-      try {
-        const results = await searchProvider(provider, query, searchLimit, env, searchOptions);
-        return { provider, results, warning: results.length === 0 ? `${provider}: empty results` : "" };
-      } catch (error) {
-        return { provider, results: [], warning: `${provider}: ${error.message}` };
-      }
-    }));
-    warnings.push(...settled.map((item) => item.warning).filter(Boolean));
-    const providersUsed = settled.filter((item) => item.results.length > 0).map((item) => item.provider);
-    const candidates = mergeRankResults(settled.flatMap((item) => item.results), query, searchLimit, freshness);
-    const reranked = await maybeRerankResults(candidates, query, limit, body, env, warnings);
-    const results = reranked.results;
-    return {
-      ok: results.length > 0,
-      status: results.length > 0 ? 200 : 502,
-      strategy,
-      provider: requestedProvider,
-      providers_used: providersUsed,
-      query,
-      freshness,
-      language,
-      count: results.length,
-      results,
-      ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
-      fetched_at: new Date().toISOString(),
-      warnings,
-      details: warnings,
-      ...(results.length === 0 ? { error: "all search providers failed" } : {}),
-    };
-  }
-
-  for (const provider of providerOrder) {
+async function collectProviderResults(providers, query, searchLimit, env, searchOptions, searchTimeoutMs) {
+  return Promise.all(providers.map(async (provider) => {
     try {
-      const candidates = mergeRankResults(await searchProvider(provider, query, searchLimit, env, searchOptions), query, searchLimit, freshness);
-      const reranked = await maybeRerankResults(candidates, query, limit, body, env, warnings);
+      const results = await withTimeout(searchProvider(provider, query, searchLimit, env, searchOptions), searchTimeoutMs, provider);
+      return { provider, results, warning: results.length === 0 ? `${provider}: empty results` : "" };
+    } catch (error) {
+      return { provider, results: [], warning: `${provider}: ${error.message}` };
+    }
+  }));
+}
+
+async function aggregateSearch(providers, context) {
+  const settled = await collectProviderResults(providers, context.query, context.searchLimit, context.env, context.searchOptions, context.searchTimeoutMs);
+  context.warnings.push(...settled.map((item) => item.warning).filter(Boolean));
+  const providersUsed = settled.filter((item) => item.results.length > 0).map((item) => item.provider);
+  const candidates = mergeRankResults(settled.flatMap((item) => item.results), context.query, context.searchLimit, context.freshness);
+  const reranked = await maybeRerankResults(candidates, context.query, context.limit, context.body, context.env, context.warnings);
+  const results = reranked.results;
+  return {
+    ok: results.length > 0,
+    status: results.length > 0 ? 200 : 502,
+    mode: context.mode,
+    strategy: context.strategy,
+    provider: context.requestedProvider,
+    providers_used: providersUsed,
+    query: context.query,
+    freshness: context.freshness,
+    language: context.language,
+    count: results.length,
+    results,
+    ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
+    fetched_at: new Date().toISOString(),
+    warnings: context.warnings,
+    details: context.warnings,
+    ...(results.length === 0 ? { error: "all search providers failed" } : {}),
+  };
+}
+
+async function fallbackSearch(providers, context) {
+  for (const provider of providers) {
+    try {
+      const providerResults = await withTimeout(searchProvider(provider, context.query, context.searchLimit, context.env, context.searchOptions), context.searchTimeoutMs, provider);
+      const candidates = mergeRankResults(providerResults, context.query, context.searchLimit, context.freshness);
+      const reranked = await maybeRerankResults(candidates, context.query, context.limit, context.body, context.env, context.warnings);
       const results = reranked.results;
       if (results.length > 0) {
         return {
           ok: true,
-          strategy,
+          mode: context.mode,
+          strategy: context.strategy,
           provider,
-          query,
-          freshness,
-          language,
+          query: context.query,
+          freshness: context.freshness,
+          language: context.language,
           count: results.length,
           results,
           ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
           fetched_at: new Date().toISOString(),
-          warnings,
-          details: warnings,
+          warnings: context.warnings,
+          details: context.warnings,
         };
       }
-      warnings.push(`${provider}: empty results`);
+      context.warnings.push(`${provider}: empty results`);
     } catch (error) {
-      warnings.push(`${provider}: ${error.message}`);
+      context.warnings.push(`${provider}: ${error.message}`);
     }
   }
   return {
     ok: false,
     status: 502,
-    strategy,
-    query,
-    freshness,
-    language,
+    mode: context.mode,
+    strategy: context.strategy,
+    query: context.query,
+    freshness: context.freshness,
+    language: context.language,
     error: "all search providers failed",
-    provider: requestedProvider,
+    provider: context.requestedProvider,
     count: 0,
     fetched_at: new Date().toISOString(),
-    warnings,
-    details: warnings,
+    warnings: context.warnings,
+    details: context.warnings,
   };
+}
+
+async function balancedSearch(providerOrder, context) {
+  if (context.requestedProvider !== "auto" || providerOrder.length <= 1) return fallbackSearch(providerOrder, context);
+  const firstWave = providerOrder.slice(0, Math.min(3, providerOrder.length));
+  const firstWaveResult = await aggregateSearch(firstWave, context);
+  if (firstWaveResult.results.length > 0) return firstWaveResult;
+  return fallbackSearch(providerOrder.slice(firstWave.length), context);
+}
+
+
+async function runSearch(body, env) {
+  const query = String(body.query || "").trim();
+  if (!query) return { ok: false, status: 400, error: "query is required" };
+  if (query.length > MAX_QUERY_CHARS) return { ok: false, status: 400, error: `query too long; max ${MAX_QUERY_CHARS} chars` };
+  const mode = String(body.mode || "balanced").toLowerCase();
+  if (!SEARCH_MODES.has(mode)) {
+    return { ok: false, status: 400, error: "mode must be fast, balanced, or thorough" };
+  }
+  const limit = clampLimit(body.limit);
+  const requestedProvider = String(body.provider || "auto").toLowerCase();
+  if (!isSupportedProvider(requestedProvider)) {
+    return { ok: false, status: 400, error: `unsupported provider: ${requestedProvider}` };
+  }
+  const strategy = mode === "thorough" ? "aggregate" : mode === "fast" ? "fallback" : "balanced";
+  const freshness = normalizeFreshness(body.freshness, query);
+  const language = normalizeLanguage(body.language, query);
+  const searchOptions = { freshness, language };
+  const warnings = [];
+  const providerOrder = configuredProviders(requestedProvider, env);
+  const searchBody = { ...body, rerank: body.rerank === undefined && mode === "fast" ? false : body.rerank };
+  const rerankProviders = configuredRerankProviders(searchBody.rerank, env);
+  const defaultRerankPool = mode === "thorough" ? MAX_LIMIT : limit * 3;
+  const rerankPool = Math.min(MAX_LIMIT, Math.max(limit, Number.parseInt(searchBody.rerank_pool ?? String(defaultRerankPool), 10) || limit));
+  const searchLimit = rerankProviders.length ? rerankPool : limit;
+  const searchTimeoutMs = providerTimeoutMs(env.SEARCH_PROVIDER_TIMEOUT_MS, DEFAULT_SEARCH_PROVIDER_TIMEOUT_MS);
+  const context = { body: searchBody, env, query, limit, requestedProvider, mode, strategy, freshness, language, searchOptions, warnings, searchLimit, searchTimeoutMs };
+
+  if (mode === "thorough") return aggregateSearch(providerOrder, context);
+  if (mode === "fast") return fallbackSearch(providerOrder, context);
+  return balancedSearch(providerOrder, context);
 }
 
 function isBlockedUrl(url) {
@@ -2073,8 +2129,8 @@ async function runBatchFetch(body, env = {}, parentRequestId = requestId()) {
 
 async function runSearchFetch(body, env = {}, parentRequestId = requestId()) {
   const fetchTop = Math.min(Math.max(Number.parseInt(body.fetch_top ?? "3", 10) || 3, 1), 10);
-  const mode = fetchMode(body.fetch_mode || body.mode || "chunks");
-  if (!mode) return { ok: false, status: 400, error: `unsupported fetch mode: ${body.fetch_mode || body.mode}` };
+  const mode = fetchMode(body.fetch_mode || "chunks");
+  if (!mode) return { ok: false, status: 400, error: `unsupported fetch mode: ${body.fetch_mode}` };
   const search = await runSearch(body, env);
   if (!search.ok) {
     return {
@@ -2148,7 +2204,7 @@ async function handleRequest(request, env) {
     const providers = result.providers_used || (result.provider ? [result.provider] : []);
     return json(result, result.status || (result.ok ? 200 : 500), {
       "x-search-providers": providers.join(","),
-      "x-search-strategy": result.strategy || "",
+      "x-search-mode": result.mode || "",
     });
   }
   if (url.pathname === "/fetch") {

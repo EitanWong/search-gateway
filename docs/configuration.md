@@ -108,6 +108,8 @@ If no paid provider keys are configured, the gateway still works through DuckDuc
 | `DUCKDUCKGO_ENDPOINT` | Variable | Optional | DuckDuckGo HTML endpoint override. Default: `https://html.duckduckgo.com/html/`. Usually do not change this. |
 | `DUCKDUCKGO_LANGUAGE` | Variable | Optional | DuckDuckGo/Bing language fallback. Default template value: `en-US`. |
 | `BING_MARKET` | Variable | Optional | Bing market/language fallback. Default template value: `en-US`. |
+| `SEARCH_PROVIDER_TIMEOUT_MS` | Variable | Optional | Per-provider search timeout. Default: `8000`; clamped to `1000`–`30000`. Applies to each provider call in every search mode. |
+| `RERANK_PROVIDER_TIMEOUT_MS` | Variable | Optional | Per-provider rerank timeout. Default: `6000`; clamped to `1000`–`30000`. Applies independently to each configured rerank provider. |
 
 ## Rate limiting
 
@@ -247,7 +249,7 @@ Private mode without token:
   "query": "Cloudflare Workers docs",
   "limit": 8,
   "provider": "auto",
-  "strategy": "fallback",
+  "mode": "balanced",
   "freshness": "none",
   "language": "auto",
   "rerank": "auto"
@@ -259,7 +261,7 @@ Private mode without token:
 | `query` | required | string | Search query. Max 500 chars. |
 | `limit` | `8` | 1–20 | Max results. |
 | `provider` | `auto` | `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing` | Provider to use. |
-| `strategy` | `fallback` | `fallback`, `aggregate` | Sequential fallback or parallel merge/ranking. |
+| `mode` | `balanced` | `fast`, `balanced`, `thorough` | Search execution mode. `fast` is sequential and disables implicit rerank; `balanced` parallelizes the first provider wave; `thorough` aggregates all configured providers and reranks when configured. |
 | `freshness` | `none` | `none`, `auto`, `day`, `week`, `month`, `year` | Recency hint. `auto` detects news/latest intent. |
 | `language` | `auto` | `auto`, `zh-CN`, `en-US`, provider-supported values | Language/market hint. |
 | `rerank` | `auto` | `auto`, `false`, comma-separated rerank providers | Optional second-stage rerank. `auto` uses configured rerank providers; use `false` to disable per request. |
@@ -338,7 +340,7 @@ Max 10 fetch requests per call.
   "limit": 8,
   "fetch_top": 3,
   "provider": "auto",
-  "strategy": "fallback",
+  "mode": "balanced",
   "freshness": "none",
   "language": "auto",
   "fetch_mode": "chunks",

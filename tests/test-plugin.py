@@ -124,7 +124,7 @@ def test_search_and_fetch_tool_exposes_and_maps_fields():
     plugin.register(ctx)
     assert "search_and_fetch" in ctx.tools
     props = ctx.tools["search_and_fetch"]["schema"]["properties"]
-    for key in ["query", "limit", "fetch_top", "provider", "strategy", "freshness", "language", "fetch_mode", "max_chars", "chunk_chars", "cache_ttl"]:
+    for key in ["query", "limit", "fetch_top", "provider", "mode", "freshness", "language", "fetch_mode", "max_chars", "chunk_chars", "cache_ttl"]:
         assert key in props, f"missing search_and_fetch schema property: {key}"
 
     result = json.loads(ctx.tools["search_and_fetch"]["handler"]({
@@ -132,7 +132,7 @@ def test_search_and_fetch_tool_exposes_and_maps_fields():
         "limit": 50,
         "fetch_top": 99,
         "provider": "brave",
-        "strategy": "aggregate",
+        "mode": "thorough",
         "freshness": "week",
         "language": "en-US",
         "fetch_mode": "chunks",
@@ -148,7 +148,7 @@ def test_search_and_fetch_tool_exposes_and_maps_fields():
             "limit": 20,
             "fetch_top": 10,
             "provider": "brave",
-            "strategy": "aggregate",
+            "mode": "thorough",
             "freshness": "week",
             "language": "en-US",
             "fetch_mode": "chunks",
@@ -232,7 +232,7 @@ def test_tool_descriptions_teach_agent_workflow():
     search_desc = ctx.tools["search_web"]["description"]
     fetch_desc = ctx.tools["fetch_url"]["description"]
     assert "freshness" in search_desc
-    assert "aggregate" in search_desc
+    assert "mode='thorough'" in search_desc
     assert "fetch_url" in search_desc
     assert "mode='chunks'" in fetch_desc
     assert "next_offset" in fetch_desc

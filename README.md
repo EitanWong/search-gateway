@@ -125,6 +125,8 @@ Configure non-sensitive options as Cloudflare Variables and sensitive values as 
 | `SEARCH_RATE_LIMIT_KV` | KV binding | unset | KV namespace | Optional per-IP/path minute limiter. |
 | `RATE_LIMIT_KV` | KV binding | unset | KV namespace | Backward-compatible KV limiter binding. |
 | `SEARCH_RATE_LIMIT_PER_MINUTE` | Variable | `60` | positive integer | Limit used only when KV is bound. |
+| `SEARCH_PROVIDER_TIMEOUT_MS` | Variable | `8000` | `1000`–`30000` | Per-provider search timeout. Prevents one slow provider from blocking the selected search mode. |
+| `RERANK_PROVIDER_TIMEOUT_MS` | Variable | `6000` | `1000`–`30000` | Per-provider rerank timeout. Prevents slow rerank providers from blocking results. |
 
 Full reference: [docs/configuration.md](docs/configuration.md).
 
@@ -148,7 +150,7 @@ Full reference: [docs/configuration.md](docs/configuration.md).
   "query": "Hermes Agent toolsets",
   "limit": 8,
   "provider": "auto",
-  "strategy": "fallback",
+  "mode": "balanced",
   "freshness": "none",
   "language": "auto"
 }
@@ -164,10 +166,11 @@ Rerank is a second-stage ranking layer for `/search`. When any supported rerank 
 
 Supported rerank providers: `bocha_rerank`, `cohere_rerank`, `jina_rerank`, `voyage_rerank`, `siliconflow_rerank`. DashScope/Qwen3 Rerank and VikingDB are tracked as future adapters pending verified standalone HTTP request/response shape.
 
-Strategies:
+Search modes:
 
-- `fallback` — try providers in order until one returns results. Default for compatibility and cost control.
-- `aggregate` — query available providers in parallel, canonicalize/dedupe/rank results.
+- `fast` — lowest latency/cost. Sequential fallback, no implicit rerank.
+- `balanced` — default. Parallel first wave of up to 3 configured providers, then merge/dedupe/rank.
+- `thorough` — highest recall. Parallel aggregate across configured providers, then rerank when configured.
 
 Freshness: `none`, `auto`, `day`, `week`, `month`, `year`.
 
@@ -240,7 +243,7 @@ Guardrails: private/loopback URLs are blocked, JSON body and URL/query lengths a
   "limit": 8,
   "fetch_top": 3,
   "provider": "auto",
-  "strategy": "fallback",
+  "mode": "balanced",
   "freshness": "auto",
   "language": "auto",
   "fetch_mode": "chunks"

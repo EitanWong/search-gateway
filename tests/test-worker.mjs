@@ -99,7 +99,7 @@ try {
     assert.match(data.version, /^\d+\.\d+\.\d+$/);
     assert.equal(data.endpoints.search, '/search');
     assert.equal(data.endpoints.search_fetch, '/search_fetch');
-    assert.deepEqual(data.capabilities.search_strategies, ['fallback', 'aggregate']);
+    assert.deepEqual(data.capabilities.search_modes, ['fast', 'balanced', 'thorough']);
     assert.equal(data.capabilities.canonical_dedupe, true);
     assert.equal('providers' in data, false);
     assert.equal('provider_order' in data, false);
@@ -368,10 +368,11 @@ try {
       throw new Error(`unexpected fetch: ${url}`);
     });
 
-    const res = await post('/search', { query: 'agent search gateway', provider: 'auto', strategy: 'aggregate', limit: 5 });
+    const res = await post('/search', { query: 'agent search gateway', provider: 'auto', mode: 'thorough', limit: 5 });
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
+    assert.equal(data.mode, 'thorough');
     assert.equal(data.strategy, 'aggregate');
     assert.deepEqual(data.providers_used, ['brave', 'serper', 'tavily', 'bing']);
     assert.equal(data.count, 3);
@@ -379,6 +380,53 @@ try {
     assert.deepEqual(data.results[0].providers, ['brave', 'serper', 'bing']);
     assert.equal(data.results[0].provider, 'brave');
     assert.equal(data.results[0].source, 'example.com');
+  }
+
+  // default balanced mode searches the first provider wave in parallel without querying every provider.
+  {
+    const calls = [];
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      calls.push(url);
+      if (url.startsWith('https://api.search.brave.com/')) return jsonResponse({ web: { results: [{ title: 'Brave balanced', url: 'https://balanced.test/brave', description: 'agent search' }] } });
+      if (url === 'https://google.serper.dev/search') return jsonResponse({ organic: [{ title: 'Serper balanced', link: 'https://balanced.test/serper', snippet: 'agent search' }] });
+      if (url === 'https://api.tavily.com/search') return jsonResponse({ results: [{ title: 'Tavily balanced', url: 'https://balanced.test/tavily', content: 'agent search' }] });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const res = await post('/search', { query: 'agent search', provider: 'auto', limit: 5 });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.mode, 'balanced');
+    assert.equal(data.strategy, 'balanced');
+    assert.deepEqual(data.providers_used, ['brave', 'serper', 'tavily']);
+    assert.equal(data.count, 3);
+    assert.equal(calls.length, 3);
+  }
+
+  // fast mode disables implicit rerank even when rerank credentials are configured.
+  {
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) return jsonResponse({ web: { results: [{ title: 'Fast no rerank', url: 'https://fast.test/a', description: 'agent search' }] } });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const fastEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BRAVE_SEARCH_API_KEY: 'brave-key', COHERE_API_KEY: 'cohere-key' };
+    const res = await post('/search', { query: 'agent search', provider: 'brave', mode: 'fast', limit: 3 }, fastEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.mode, 'fast');
+    assert.equal(data.strategy, 'fallback');
+    assert.equal(data.rerank_providers_used, undefined);
+  }
+
+  // invalid mode is rejected before provider fetch.
+  {
+    mockFetch(async () => { throw new Error('fetch should not be called for invalid mode'); });
+    const res = await post('/search', { query: 'agent search', mode: 'slow' });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, 'mode must be fast, balanced, or thorough');
   }
 
   // Search rerank uses multiple configured rerank providers and aggregates their votes.
@@ -441,7 +489,7 @@ try {
       throw new Error(`unexpected fetch: ${url}`);
     });
 
-    const res = await post('/search', { query: 'agent search', provider: 'auto', strategy: 'aggregate', limit: 5 });
+    const res = await post('/search', { query: 'agent search', provider: 'auto', mode: 'thorough', limit: 5 });
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
@@ -470,7 +518,7 @@ try {
       throw new Error(`unexpected fetch: ${url}`);
     });
 
-    const res = await post('/search', { query: 'agent search', provider: 'auto', strategy: 'aggregate', limit: 5 });
+    const res = await post('/search', { query: 'agent search', provider: 'auto', mode: 'thorough', limit: 5 });
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
@@ -498,7 +546,7 @@ try {
       throw new Error(`unexpected fetch: ${url}`);
     });
 
-    const res = await post('/search', { query: 'agent search', provider: 'auto', strategy: 'aggregate', limit: 5 });
+    const res = await post('/search', { query: 'agent search', provider: 'auto', mode: 'thorough', limit: 5 });
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(braveCalls, 1);
@@ -865,10 +913,13 @@ try {
 
     mockFetch(async (input, init) => {
       const url = String(input.url || input);
-      assert.equal(url, 'https://html.duckduckgo.com/html/');
-      assert.equal(init.method, 'POST');
-      assert.equal(init.body, 'q=duck+search');
-      return htmlResponse(html);
+      if (url === 'https://html.duckduckgo.com/html/') {
+        assert.equal(init.method, 'POST');
+        assert.equal(init.body, 'q=duck+search');
+        return htmlResponse(html);
+      }
+      if (url.startsWith('https://www.bing.com/search')) return htmlResponse('');
+      throw new Error(`unexpected fetch: ${url}`);
     });
 
     const noKeyEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token' };
@@ -876,7 +927,9 @@ try {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
-    assert.equal(data.provider, 'duckduckgo');
+    assert.equal(data.mode, 'balanced');
+    assert.equal(data.provider, 'auto');
+    assert.deepEqual(data.providers_used, ['duckduckgo']);
     assert.equal(data.count, 1);
     assert.equal(data.results[0].canonical_url, 'https://example.com/ddg');
   }
@@ -901,7 +954,7 @@ try {
     assert.deepEqual(_test.configuredProviders('auto', { ZHIPU_API_KEY: 'zhipu-token', BOCHA_API_KEY: 'bocha-token' }), ['zhipu', 'bocha', 'bocha_ai', 'duckduckgo', 'bing']);
   }
 
-  // fallback keeps compatibility and returns warnings from failed/empty earlier providers.
+  // fast mode is sequential fallback and returns warnings from failed/empty earlier providers.
   {
     mockFetch(async (input) => {
       const url = String(input.url || input);
@@ -913,9 +966,10 @@ try {
       throw new Error(`unexpected fetch: ${url}`);
     });
 
-    const res = await post('/search', { query: 'query match', provider: 'auto', limit: 3 });
+    const res = await post('/search', { query: 'query match', provider: 'auto', mode: 'fast', limit: 3 });
     assert.equal(res.status, 200);
     const data = await res.json();
+    assert.equal(data.mode, 'fast');
     assert.equal(data.strategy, 'fallback');
     assert.equal(data.provider, 'tavily');
     assert.equal(data.count, 1);
