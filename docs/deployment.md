@@ -52,7 +52,7 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-The repository root is the Cloudflare Dashboard one-click import target. `wrangler.json` is intentionally minimal so both Dashboard import and normal `wrangler deploy` use the same deployable Worker config. The `deploy-template/` directory is only a local/CI compatibility fixture, not the public Deploy Button target.
+The repository root is the Cloudflare Dashboard one-click import target. `wrangler.toml` is intentionally minimal so both Dashboard import and normal `wrangler deploy` use the same deployable Worker config. The `deploy-template/` directory is only a local/CI compatibility fixture, not the public Deploy Button target.
 
 Default values:
 

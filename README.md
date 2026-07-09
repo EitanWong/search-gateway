@@ -272,15 +272,15 @@ The live smoke uses Bing HTML search and `https://example.com`; it is intentiona
 
 ### One-click Cloudflare deploy
 
-Use the button at the top of this README. The default deployment requires no secrets or provider keys:
+Use the button at the top of this README. The import flow requires no deploy-time secrets or provider keys:
 
 - build command: `npm run build`
 - deploy command: `npm run deploy`
-- Worker config: root `wrangler.json`
+- Worker config: root `wrangler.toml`
 - default search: no-key DuckDuckGo/Bing HTML fallbacks
-- default auth mode: `open`
+- default auth mode: secure-by-default; `/search` and `/fetch` return `503` until `SEARCH_GATEWAY_TOKEN` is configured
 
-After deployment, visit `/health`. If you want bearer auth, generate a token and set it as a Worker secret:
+After deployment, visit `/health`, generate a token, and set it as a Worker secret:
 
 ```bash
 openssl rand -hex 32
