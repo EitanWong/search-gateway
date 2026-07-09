@@ -1,0 +1,94 @@
+name: Update from upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: Upstream owner/repo to sync from
+        required: true
+        default: EitanWong/search-gateway
+      upstream_ref:
+        description: Upstream branch, tag, or commit
+        required: true
+        default: main
+      preserve_wrangler:
+        description: Preserve this repo's wrangler.toml
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Open upstream update PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment repo
+        uses: actions/checkout@v4
+
+      - name: Download upstream deploy template
+        env:
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/search-gateway-archive /tmp/search-gateway-upstream
+          mkdir -p /tmp/search-gateway-archive /tmp/search-gateway-upstream
+          curl -fsSL "https://github.com/${UPSTREAM_REPOSITORY}/archive/${UPSTREAM_REF}.tar.gz" -o /tmp/upstream.tar.gz
+          tar -xzf /tmp/upstream.tar.gz -C /tmp/search-gateway-archive
+          TEMPLATE_DIR=$(find /tmp/search-gateway-archive -type d -path '*/deploy-template' | head -n 1)
+          if [ -z "$TEMPLATE_DIR" ]; then
+            echo "Could not find deploy-template in ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}." >&2
+            exit 1
+          fi
+          rsync -a "$TEMPLATE_DIR/" /tmp/search-gateway-upstream/
+
+      - name: Sync template files
+        env:
+          PRESERVE_WRANGLER: ${{ inputs.preserve_wrangler }}
+        run: |
+          set -euo pipefail
+          rm -rf \
+            /tmp/search-gateway-upstream/node_modules \
+            /tmp/search-gateway-upstream/dist \
+            /tmp/search-gateway-upstream/.wrangler \
+            /tmp/search-gateway-upstream/.dev.vars \
+            /tmp/search-gateway-upstream/.env
+          if [ "$PRESERVE_WRANGLER" = "true" ]; then
+            rm -f /tmp/search-gateway-upstream/wrangler.toml
+          fi
+          cp -a /tmp/search-gateway-upstream/. ./
+
+      - name: Show changes
+        run: git status --short
+
+      - name: Create update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "Already up to date."
+            exit 0
+          fi
+          BRANCH="update/search-gateway-${UPSTREAM_REF//[^A-Za-z0-9._-]/-}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A
+          git commit -m "chore: update search-gateway from upstream ${UPSTREAM_REF}"
+          git push --force-with-lease origin "$BRANCH"
+          gh pr create \
+            --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
+            --body "Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.\n\nReview notes:\n- By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.\n- Check upstream release notes for any required configuration changes before merging.\n- After merge, Cloudflare's Git integration should deploy the updated Worker." \
+            --base "${GITHUB_REF_NAME}" \
+            --head "$BRANCH" \
+            || gh pr edit "$BRANCH" --title "chore: update search-gateway from upstream ${UPSTREAM_REF}"

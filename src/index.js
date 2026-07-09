@@ -1,3 +1,4 @@
+const WORKER_VERSION = "0.1.0";
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 20;
 const MAX_FETCH_CHARS = 30000;
@@ -656,10 +657,72 @@ function isBlockedIpv4(parts) {
     || (a === 255 && b === 255 && c === 255 && d === 255);
 }
 
+function html(data, status = 200, extraHeaders = {}) {
+  return new Response(data, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      ...corsHeaders(),
+      ...extraHeaders,
+    },
+  });
+}
+
+function setupPage(env) {
+  const mode = configuredGatewayMode(env);
+  const tokenConfigured = authConfigured(env);
+  const base = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>search-gateway setup</title>
+  <style>
+    body{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:860px;margin:40px auto;padding:0 20px;line-height:1.55;color:#17202a;background:#f8fafc}
+    main{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:28px;box-shadow:0 12px 32px rgba(15,23,42,.06)}
+    h1{margin-top:0;font-size:2rem}.muted{color:#64748b}.pill{display:inline-block;border-radius:999px;padding:4px 10px;background:#e0f2fe;color:#075985;font-size:.85rem;font-weight:700}
+    code,pre{background:#0f172a;color:#e2e8f0;border-radius:10px}code{padding:2px 5px}pre{padding:14px;overflow:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;background:#fbfdff}a{color:#2563eb}
+  </style>
+</head>
+<body><main>
+  <p><span class="pill">search-gateway v${WORKER_VERSION}</span></p>
+  <h1>Your Cloudflare search gateway is running.</h1>
+  <p class="muted">A public-by-default one-click Cloudflare search/fetch gateway template, with private hardening and upstream-update workflow for long-running personal deployments.</p>
+  <div class="grid">
+    <section class="card"><strong>Mode</strong><br>${mode}${mode === "private" ? (tokenConfigured ? " · token configured" : " · token missing") : " · open access"}</section>
+    <section class="card"><strong>Health</strong><br><a href="/health">GET /health</a></section>
+    <section class="card"><strong>Endpoints</strong><br><code>POST /search</code><br><code>POST /fetch</code><br><code>POST /batch_fetch</code><br><code>POST /search_fetch</code></section>
+  </div>
+  <h2>Smoke test</h2>
+  <pre>curl -s "$WORKER_URL/health"
+curl -s "$WORKER_URL/search" \\
+  -H 'content-type: application/json' \\
+  -d '{"query":"Cloudflare Workers docs","limit":3}'</pre>
+  <h2>Private mode</h2>
+  <pre>SEARCH_GATEWAY_MODE=private
+SEARCH_GATEWAY_TOKEN=&lt;random-secret&gt;
+
+curl -s "$WORKER_URL/search" \\
+  -H "authorization: Bearer <token>" \\
+  -H 'content-type: application/json' \\
+  -d '{"query":"Cloudflare Workers docs","limit":3}'</pre>
+  <p class="muted">Configure variables in Cloudflare Dashboard → Worker → Settings → Variables and Secrets. Keep tokens/API keys as Secrets.</p>
+</main></body></html>`;
+  return base;
+}
+
 function healthPayload(env, includeConfig = false) {
   const base = {
     ok: true,
     service: "search-gateway",
+    version: WORKER_VERSION,
+    endpoints: {
+      health: "/health",
+      search: "/search",
+      fetch: "/fetch",
+      batch_fetch: "/batch_fetch",
+      search_fetch: "/search_fetch",
+    },
     capabilities: {
       search_strategies: ["fallback", "aggregate"],
       canonical_dedupe: true,
@@ -1628,6 +1691,9 @@ async function handleRequest(request, env) {
   const request_id = requestId();
   const url = new URL(request.url);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
+  if (request.method === "GET" && url.pathname === "/") {
+    return html(setupPage(env));
+  }
   if (request.method === "GET" && url.pathname === "/health") {
     return json(healthPayload(env, !authRequired(env) || isAuthorized(request, env) || !authConfigured(env)));
   }

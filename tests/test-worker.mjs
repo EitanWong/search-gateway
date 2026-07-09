@@ -96,6 +96,9 @@ try {
     const data = await res.json();
     assert.equal(data.ok, true);
     assert.equal(data.service, 'search-gateway');
+    assert.match(data.version, /^\d+\.\d+\.\d+$/);
+    assert.equal(data.endpoints.search, '/search');
+    assert.equal(data.endpoints.search_fetch, '/search_fetch');
     assert.deepEqual(data.capabilities.search_strategies, ['fallback', 'aggregate']);
     assert.equal(data.capabilities.canonical_dedupe, true);
     assert.equal('providers' in data, false);
@@ -130,6 +133,17 @@ try {
     assert.equal(privateMissingTokenHealthData.auth_required, true);
     assert.equal(privateMissingTokenHealthData.auth_mode, 'private_unconfigured');
     assert.equal(privateMissingTokenHealthData.setup.status, 'token_required');
+  }
+
+  // setup page gives humans immediate next steps from the Worker root.
+  {
+    const res = await call('/', {}, {});
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const text = await res.text();
+    assert.match(text, /Your Cloudflare search gateway is running/);
+    assert.match(text, /POST \/search/);
+    assert.match(text, /search-gateway v\d+\.\d+\.\d+/);
   }
 
   // Public mode is the one-click default; private mode enforces bearer auth and requires a token.

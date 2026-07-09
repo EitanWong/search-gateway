@@ -18,6 +18,31 @@ For the full local CI gate:
 npm run test:ci
 ```
 
+## Branch policy
+
+`main` is the latest stable version and the source used by Cloudflare one-click deployments. Do not merge experimental work into `main`.
+
+Use scoped branches:
+
+| Branch | Purpose |
+|---|---|
+| `feat/<short-name>` | New user-visible capability. |
+| `fix/<short-name>` | Bug fix or deploy-flow repair. |
+| `docs/<short-name>` | Documentation-only change. |
+| `chore/<short-name>` | CI, tooling, dependency, or repository maintenance. |
+| `hotfix/<short-name>` | Urgent production/deploy breakage fix. |
+| `dev` | Optional integration branch for grouped feature work before `main`. |
+
+Default flow:
+
+```text
+feat/* or fix/* -> PR -> CI -> main
+```
+
+Use `dev` only when multiple feature branches need combined stabilization before being promoted to `main`.
+
+See [Release and update policy](docs/release-management.md) for the full maintainer workflow.
+
 ## Search ranking changes
 
 Ranking changes must be small, deterministic, and backed by evidence:
