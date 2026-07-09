@@ -89,7 +89,7 @@ You can also do nothing and let the weekly scheduled run check upstream automati
 
 ### 4. Wait for the workflow result
 
-The workflow downloads upstream `deploy-template/`, copies template files into an update branch, validates the result, and opens a pull request.
+The workflow downloads upstream `deploy-template/`, copies template files into an update branch, validates the result, and opens a pull request. The pull request body includes a changed-files summary and the validation commands that already ran.
 
 Validation before PR creation:
 
@@ -117,6 +117,16 @@ Review these files carefully:
 | `package.json` / `package-lock.json` | Dependency or script changes. Usually safe to accept. |
 | `README.md` | Local instructions may be overwritten by upstream template docs. |
 | `wrangler.toml` | Should be unchanged when `preserve_wrangler=true`. If changed, verify Worker name/routes/bindings before merging. |
+
+The generated repository also includes a lightweight CI workflow for pull requests and pushes:
+
+```bash
+npm ci
+npm run build
+npm run dry-run
+```
+
+Wait for the green CI check before merging the update PR.
 
 Never commit secrets such as `.dev.vars`, `.env`, provider API keys, or bearer tokens.
 

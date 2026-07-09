@@ -118,7 +118,7 @@ npm run build
 npm run dry-run
 ```
 
-Review the PR, merge it, and Cloudflare should deploy the merged update.
+The PR body lists changed files and the validation commands. The generated repo also runs CI on pull requests, so wait for the green check, review the PR, merge it, and Cloudflare should deploy the merged update.
 
 Use a tag such as `v0.1.0` instead of `main` only when you want a pinned update.
 
@@ -129,6 +129,7 @@ Use a tag such as `v0.1.0` instead of `main` only when you want a pinned update.
 | `src/index.js` | Worker implementation |
 | `wrangler.toml` | Your Worker name, variables, and bindings |
 | `.github/workflows/update-from-upstream.yml` | Manual upstream update workflow |
+| `.github/workflows/ci.yml` | Build and dry-run validation for PRs and pushes |
 | `package.json` | Build/deploy scripts |
 
 Do not commit `.dev.vars`, `.env`, API keys, or bearer tokens.

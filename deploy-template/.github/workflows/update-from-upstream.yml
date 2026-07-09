@@ -112,6 +112,23 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH="update/search-gateway-${UPSTREAM_REF//[^A-Za-z0-9._-]/-}"
+          CHANGED_FILES=$(git status --short | sed 's/^/- `/; s/$/`/')
+          cat > /tmp/update-pr-body.md <<EOF
+          Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.
+
+          Validation run before opening this PR:
+          - npm ci
+          - npm run build
+          - npm run dry-run
+
+          Changed files:
+          ${CHANGED_FILES}
+
+          Review notes:
+          - By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.
+          - Check upstream release notes for any required configuration changes before merging.
+          - After merge, Cloudflare's Git integration should deploy the updated Worker.
+          EOF
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
@@ -120,9 +137,9 @@ jobs:
           git push --force-with-lease origin "$BRANCH"
           gh pr create \
             --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
-            --body "Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.\n\nValidation run before opening this PR:\n- npm ci\n- npm run build\n- npm run dry-run\n\nReview notes:\n- By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.\n- Check upstream release notes for any required configuration changes before merging.\n- After merge, Cloudflare's Git integration should deploy the updated Worker." \
+            --body-file /tmp/update-pr-body.md \
             --base "${GITHUB_REF_NAME}" \
             --head "$BRANCH" \
             || gh pr edit "$BRANCH" \
               --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
-              --body "Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.\n\nValidation run before opening this PR:\n- npm ci\n- npm run build\n- npm run dry-run\n\nReview notes:\n- By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.\n- Check upstream release notes for any required configuration changes before merging.\n- After merge, Cloudflare's Git integration should deploy the updated Worker."
+              --body-file /tmp/update-pr-body.md
