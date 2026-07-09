@@ -66,12 +66,13 @@ v0.1.1
 v0.1.2
 ```
 
-Release notes should include:
+Release notes should follow [release-template.md](release-template.md) and include:
 
 - Summary: what changed and why it matters.
 - Upgrade notes: whether users should run **Update from upstream**.
 - Configuration changes: new/changed variables, secrets, KV bindings, or `wrangler.toml` snippets.
 - Compatibility notes: any endpoint/response/default behavior changes.
+- Security notes: auth, SSRF, rate-limit, or secret-handling implications.
 - Verification: CI, dry-run deploy, or manual Cloudflare import checks.
 
 Tagging does not change the deploy source: one-click deploy and default user updates still track `main/deploy-template`. Users who want conservative updates may run the updater workflow against a tag instead of `main`.

@@ -110,6 +110,71 @@ binding = "SEARCH_RATE_LIMIT_KV"
 id = "<kv-namespace-id>"
 ```
 
+### Cloudflare Dashboard setup
+
+Use this when you deployed through the Cloudflare button and prefer the web UI over Wrangler.
+
+1. Create a KV namespace:
+
+```text
+Cloudflare Dashboard
+→ Workers & Pages
+→ KV
+→ Create a namespace
+→ Name: search-gateway-rate-limit
+```
+
+2. Bind the namespace to your Worker:
+
+```text
+Workers & Pages
+→ your search-gateway Worker
+→ Settings
+→ Bindings
+→ Add binding
+→ KV namespace
+```
+
+Use:
+
+| Field | Value |
+|---|---|
+| Variable name | `SEARCH_RATE_LIMIT_KV` |
+| KV namespace | `search-gateway-rate-limit` |
+
+3. Set the per-minute limit:
+
+```text
+Worker → Settings → Variables and Secrets → Variables → Add variable
+```
+
+| Variable | Example |
+|---|---|
+| `SEARCH_RATE_LIMIT_PER_MINUTE` | `60` |
+
+4. Deploy or redeploy the Worker if Cloudflare asks you to apply changes.
+
+5. Confirm `/health` reports the binding when configuration details are visible:
+
+```bash
+curl -s "$WORKER_URL/health"
+```
+
+Look for:
+
+```json
+{
+  "optional_kv_rate_limit": true
+}
+```
+
+### Operational notes
+
+- The in-code KV limiter is best-effort and uses per-IP, per-path minute buckets.
+- KV counters are not atomic under high burst concurrency.
+- For serious public exposure, also configure Cloudflare dashboard rate limiting / WAF rules.
+- If no KV binding is present, rate limiting is disabled even if `SEARCH_RATE_LIMIT_PER_MINUTE` is set.
+
 ## Fetch and extraction
 
 | Name | Type | Default | Description |

@@ -81,6 +81,8 @@ Cloudflare template import creates your own repository; it is not a normal GitHu
 
 The default upstream is `EitanWong/search-gateway@main`. Advanced users can run the workflow against a tag or commit.
 
+Full guide: [docs/updating.md](docs/updating.md).
+
 ## Configuration Reference
 
 Configure non-sensitive options as Cloudflare Variables and sensitive values as Cloudflare Secrets.
@@ -238,7 +240,9 @@ npm run test:live
 - [One-click Cloudflare deployment](docs/cloudflare-one-click.md)
 - [Configuration reference](docs/configuration.md)
 - [Deployment](docs/deployment.md)
+- [Updating deployed Workers](docs/updating.md)
 - [Release and update policy](docs/release-management.md)
+- [Release notes template](docs/release-template.md)
 - [Hermes integration](integrations/hermes/README.md)
 - [Testing and ranking workflow](docs/testing.md)
 - [International documentation](docs/i18n/README.md)

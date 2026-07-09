@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `docs/updating.md` with step-by-step generated-repo updater workflow guidance, expected GitHub UI states, PR review checks, and troubleshooting.
+- Expand rate-limit documentation with Cloudflare Dashboard KV namespace and Worker binding setup steps.
+- Add `docs/release-template.md` to standardize `0.1.x` release notes and upgrade guidance.
+- Rewrite `deploy-template/README.md` as a concise post-deploy user homepage.
 - Use the `deploy-template/` subdirectory as the Cloudflare one-click deployment target with a minimal `wrangler.toml`, build/deploy command prefills, default-public one-click auth mode, and optional private bearer-token hardening.
 - Add `GET /` HTML setup page and include `version` plus endpoint metadata in `GET /health`.
 - Add `deploy-template/.github/workflows/update-from-upstream.yml` so deployed user repositories can open PRs from upstream `main/deploy-template` while preserving local `wrangler.toml` by default.

@@ -1,6 +1,14 @@
-# search-gateway Worker
+# Your search-gateway Worker
 
-This repository was created from the upstream `search-gateway` Cloudflare deploy template.
+Your Cloudflare search/fetch gateway is deployed from this repository.
+
+## Start here
+
+1. Open your Worker URL in a browser.
+2. Check the setup page at `/`.
+3. Run the smoke test below.
+4. Optional: switch to private mode.
+5. Optional: run **Update from upstream** later to receive upstream fixes.
 
 ## Smoke test
 
@@ -16,56 +24,91 @@ curl -s "$WORKER_URL/search" \
   -d '{"query":"Cloudflare Workers docs","limit":3}'
 ```
 
-Open `$WORKER_URL/` in a browser for a compact setup page.
+If this works, your gateway is ready.
 
-## Private mode
+## Make it private
 
-Public mode is the template default so one-click deploy works immediately. For long-running personal use, switch to private mode in Cloudflare Dashboard → Worker → Settings → Variables and Secrets:
+The template defaults to public mode so first deploy works immediately. Anyone with the Worker URL can call it.
 
-Variables:
+For long-running personal use, set these in Cloudflare Dashboard → Worker → Settings → Variables and Secrets.
+
+Variable:
 
 ```env
 SEARCH_GATEWAY_MODE=private
 ```
 
-Secrets:
+Secret:
 
 ```env
 SEARCH_GATEWAY_TOKEN=<random-secret>
 ```
 
-Then call protected endpoints with:
+Then call endpoints with bearer auth:
 
 ```bash
 curl -s "$WORKER_URL/search" \
-  -H "authorization: Bearer <token>" \
+  -H "authorization: Bearer ***" \
   -H 'content-type: application/json' \
   -d '{"query":"Cloudflare Workers docs","limit":3}'
 ```
 
-## Configuration
+## Add better search providers
 
-Common variables/secrets:
+No provider key is required by default; the Worker falls back to DuckDuckGo/Bing HTML search.
 
-| Name | Kind | Default | Purpose |
-|---|---|---|---|
-| `SEARCH_GATEWAY_MODE` | Variable | `public` | `public` or `private`. |
-| `SEARCH_GATEWAY_TOKEN` | Secret | unset | Required in private mode. |
-| `SEARXNG_URL` | Variable/Secret | unset | Optional SearXNG JSON API base URL. |
-| `SEARXNG_SECRET` | Secret | unset | Optional bearer token for private SearXNG. |
-| `BRAVE_SEARCH_API_KEY` | Secret | unset | Optional Brave Search API key. |
-| `SERPER_API_KEY` | Secret | unset | Optional Serper API key. |
-| `TAVILY_API_KEY` | Secret | unset | Optional Tavily API key. |
-| `DUCKDUCKGO_LANGUAGE` | Variable | `en-US` | DuckDuckGo fallback language hint. |
-| `BING_MARKET` | Variable | `en-US` | Bing fallback market. |
-| `FETCH_CACHE_TTL_SECONDS` | Variable | `300` | Worker Cache TTL for `/fetch`. |
-| `SEARCH_RATE_LIMIT_PER_MINUTE` | Variable | `60` | Per-IP/path minute limit when KV is bound. |
-| `SEARCH_RATE_LIMIT_KV` | KV binding | unset | Optional KV rate-limit binding. |
+For higher quality, add one or more provider secrets in Cloudflare:
+
+| Secret | Purpose |
+|---|---|
+| `BRAVE_SEARCH_API_KEY` | Brave Search API |
+| `SERPER_API_KEY` | Google-style Serper API |
+| `TAVILY_API_KEY` | Tavily Search API |
+
+For self-hosted SearXNG:
+
+| Variable / Secret | Purpose |
+|---|---|
+| `SEARXNG_URL` | SearXNG base URL with JSON enabled |
+| `SEARXNG_SECRET` | Optional bearer token for private SearXNG |
+
+## Optional rate limiting
+
+To enable basic per-IP/per-endpoint rate limiting:
+
+1. Create a Cloudflare KV namespace.
+2. Bind it to this Worker as `SEARCH_RATE_LIMIT_KV`.
+3. Set `SEARCH_RATE_LIMIT_PER_MINUTE`, for example `60`.
+
+KV rate limiting is best-effort. For serious public exposure, also use Cloudflare dashboard rate limiting or WAF rules.
 
 ## Updating from upstream
 
-Use GitHub Actions → **Update from upstream**. The workflow copies upstream `main/deploy-template` into a branch and opens a PR.
+Use this when the upstream template gets fixes or improvements.
 
-By default it preserves your local `wrangler.toml`, so Worker name, routes, variables, and bindings remain under your control.
+```text
+GitHub → this repository → Actions → Update from upstream → Run workflow
+```
 
-Review upstream release notes before merging update PRs.
+Recommended inputs:
+
+| Input | Value |
+|---|---|
+| `upstream_repository` | `EitanWong/search-gateway` |
+| `upstream_ref` | `main` |
+| `preserve_wrangler` | `true` |
+
+The workflow opens a PR. Review it, merge it, and Cloudflare should deploy the merged update.
+
+Use a tag such as `v0.1.0` instead of `main` only when you want a pinned update.
+
+## Important files
+
+| File | Purpose |
+|---|---|
+| `src/index.js` | Worker implementation |
+| `wrangler.toml` | Your Worker name, variables, and bindings |
+| `.github/workflows/update-from-upstream.yml` | Manual upstream update workflow |
+| `package.json` | Build/deploy scripts |
+
+Do not commit `.dev.vars`, `.env`, API keys, or bearer tokens.
