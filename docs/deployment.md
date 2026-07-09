@@ -18,7 +18,7 @@ npm run build
 npm run deploy
 ```
 
-Without `SEARCH_GATEWAY_TOKEN`, the Worker runs in `auth_mode: "open"` and uses no-key DuckDuckGo/Bing HTML fallbacks where reachable.
+Without `SEARCH_GATEWAY_TOKEN`, the Worker stays secure-by-default: `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` return `503` unless `SEARCH_GATEWAY_ALLOW_OPEN=true` is explicitly configured for local/temporary development. Search itself still works without paid provider keys through DuckDuckGo/Bing HTML fallbacks where reachable.
 
 ## Optional secure mode
 
