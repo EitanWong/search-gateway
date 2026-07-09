@@ -15,14 +15,18 @@ const SEARCH_PROVIDERS = ["searxng", "zhipu", "bocha", "bocha_ai", "brave", "ser
 const RERANK_PROVIDERS = ["bocha_rerank", "cohere_rerank", "jina_rerank", "voyage_rerank", "siliconflow_rerank"];
 const SEARCH_MODES = new Set(["fast", "balanced", "thorough"]);
 const NO_KEY_PROVIDERS = new Set(["duckduckgo", "bing"]);
+const PAID_SEARCH_PROVIDERS = new Set(["zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily"]);
 const SUPPORTED_FRESHNESS = new Set(["none", "auto", "day", "week", "month", "year"]);
 const FETCH_MODES = new Set(["full", "text", "metadata", "chunks"]);
 const DEFAULT_CHUNK_CHARS = 1800;
 const MAX_CHUNK_CHARS = 6000;
 const DEFAULT_FETCH_CACHE_TTL_SECONDS = 300;
+const DEFAULT_SEARCH_FETCH_TOP = 2;
 const MAX_FETCH_CACHE_TTL_SECONDS = 3600;
 const DEFAULT_SEARCH_PROVIDER_TIMEOUT_MS = 8000;
 const DEFAULT_RERANK_PROVIDER_TIMEOUT_MS = 6000;
+const RERANK_SCORE_WEIGHT = 0.7;
+const BASE_SCORE_WEIGHT = 0.3;
 const MIN_PROVIDER_TIMEOUT_MS = 1000;
 const MAX_PROVIDER_TIMEOUT_MS = 30000;
 const FETCH_TEXT_CONTENT_TYPES = [
@@ -111,13 +115,18 @@ function providerTimeoutMs(value, fallback) {
   return Math.min(Math.max(n, MIN_PROVIDER_TIMEOUT_MS), MAX_PROVIDER_TIMEOUT_MS);
 }
 
-async function withTimeout(promise, timeoutMs, label) {
+async function withTimeout(promiseOrFactory, timeoutMs, label) {
+  const controller = new AbortController();
   let timer;
   try {
+    const promise = typeof promiseOrFactory === "function" ? promiseOrFactory(controller.signal) : promiseOrFactory;
     return await Promise.race([
       promise,
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+        timer = setTimeout(() => {
+          controller.abort(`${label} timed out after ${timeoutMs}ms`);
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
       }),
     ]);
   } finally {
@@ -930,6 +939,15 @@ function resultScore(result, tokens, freshness = "none") {
     + spamPenalty(result);
 }
 
+function normalizeNumberRange(values) {
+  const numeric = values.map((value) => Number(value || 0));
+  const min = Math.min(...numeric);
+  const max = Math.max(...numeric);
+  const span = max - min;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || span <= 0) return numeric.map(() => 0.5);
+  return numeric.map((value) => (value - min) / span);
+}
+
 function betterText(current, next) {
   if (!current) return next || "";
   if (!next) return current;
@@ -1009,7 +1027,12 @@ function mergeRankResults(results, query, limit, freshness = "none") {
     })
     .sort((a, b) => b._score - a._score || a._rank - b._rank || a.canonical_url.localeCompare(b.canonical_url));
   return diversifyResults(sorted, limit)
-    .map(({ _rank, _score, _host_provider_count, ...result }) => result);
+    .map(({ _rank, _score, _host_provider_count, ...result }) => ({ ...result, _base_score: _score }));
+}
+
+function stripInternalResultFields(result) {
+  const { _base_score, ...publicResult } = result;
+  return publicResult;
 }
 
 function isRerankProviderConfigured(provider, env) {
@@ -1038,9 +1061,9 @@ function rerankDocumentForResult(result) {
   ].filter(Boolean).join("\n"));
 }
 
-async function rerankProvider(provider, query, results, env) {
+async function rerankProvider(provider, query, results, env, options = {}) {
   const documents = results.map(rerankDocumentForResult);
-  return callRerankProvider(provider, query, documents, env, { top_n: results.length, return_documents: false });
+  return callRerankProvider(provider, query, documents, env, { top_n: results.length, return_documents: false, signal: options.signal });
 }
 
 function aggregateRerankVotes(results, providerOutputs) {
@@ -1051,31 +1074,37 @@ function aggregateRerankVotes(results, providerOutputs) {
     const min = Math.min(...scores);
     const max = Math.max(...scores);
     const span = max - min;
+    const scoresAreUnitScale = scores.every((score) => Number.isFinite(score) && score >= 0 && score <= 1);
     output.results.forEach((item, rank) => {
       const index = item.index;
       if (!Number.isInteger(index) || index < 0 || index >= results.length) return;
       const raw = Number(item.relevance_score || 0);
-      const normalized = span > 0 ? (raw - min) / span : Math.max(0, Math.min(1, raw));
+      const normalized = scoresAreUnitScale ? raw : (span > 0 ? (raw - min) / span : Math.max(0, Math.min(1, raw)));
       const rankSignal = 1 / (rank + 1);
       totals[index] += (0.8 * normalized) + (0.2 * rankSignal);
       counts[index] += 1;
     });
   }
-  return results.map((result, index) => ({
-    ...result,
-    _base_rank: index,
-    _rerank_score: counts[index] ? totals[index] / providerOutputs.length : 0,
-  })).sort((a, b) => b._rerank_score - a._rerank_score || a._base_rank - b._base_rank);
+  const baseScores = normalizeNumberRange(results.map((result) => Number(result._base_score || 0)));
+  return results.map((result, index) => {
+    const rerankScore = counts[index] ? totals[index] / providerOutputs.length : 0;
+    return {
+      ...result,
+      _base_rank: index,
+      _rerank_score: rerankScore,
+      _hybrid_score: (RERANK_SCORE_WEIGHT * rerankScore) + (BASE_SCORE_WEIGHT * baseScores[index]),
+    };
+  }).sort((a, b) => b._hybrid_score - a._hybrid_score || b._rerank_score - a._rerank_score || a._base_rank - b._base_rank);
 }
 
 async function maybeRerankResults(results, query, limit, body, env, warnings) {
-  if (!results.length) return { results, providers_used: [] };
+  if (!results.length) return { results, providers_used: [], providers_attempted: [] };
   const providers = configuredRerankProviders(body.rerank, env);
-  if (!providers.length) return { results: results.slice(0, limit), providers_used: [] };
+  if (!providers.length) return { results: results.slice(0, limit).map(stripInternalResultFields), providers_used: [], providers_attempted: [] };
   const timeoutMs = providerTimeoutMs(env.RERANK_PROVIDER_TIMEOUT_MS, DEFAULT_RERANK_PROVIDER_TIMEOUT_MS);
   const settled = await Promise.all(providers.map(async (provider) => {
     try {
-      const output = await withTimeout(rerankProvider(provider, query, results, env), timeoutMs, provider);
+      const output = await withTimeout((signal) => rerankProvider(provider, query, results, env, { signal }), timeoutMs, provider);
       return { provider, output };
     } catch (error) {
       return { provider, warning: `${provider}: ${error.message}` };
@@ -1083,11 +1112,12 @@ async function maybeRerankResults(results, query, limit, body, env, warnings) {
   }));
   warnings.push(...settled.map((item) => item.warning).filter(Boolean));
   const successful = settled.filter((item) => item.output?.results?.length > 0);
-  if (!successful.length) return { results: results.slice(0, limit), providers_used: [] };
+  if (!successful.length) return { results: results.slice(0, limit).map(stripInternalResultFields), providers_used: [], providers_attempted: providers };
   const ranked = aggregateRerankVotes(results, successful.map((item) => item.output));
   return {
-    results: diversifyResults(ranked, limit).map(({ _base_rank, _rerank_score, ...result }) => ({ ...result, rerank_score: _rerank_score })),
+    results: diversifyResults(ranked, limit).map(({ _base_rank, _rerank_score, _hybrid_score, _base_score, ...result }) => ({ ...result, rerank_score: _rerank_score })),
     providers_used: successful.map((item) => item.provider),
+    providers_attempted: providers,
   };
 }
 
@@ -1102,9 +1132,18 @@ function isProviderConfigured(provider, env) {
   return NO_KEY_PROVIDERS.has(provider);
 }
 
-function configuredProviders(requestedProvider, env) {
+function configuredProviders(requestedProvider, env, options = {}) {
   if (requestedProvider !== "auto") return [requestedProvider];
-  return SEARCH_PROVIDERS.filter((provider) => isProviderConfigured(provider, env));
+  return SEARCH_PROVIDERS
+    .filter((provider) => options.includeBochaAi || provider !== "bocha_ai")
+    .filter((provider) => isProviderConfigured(provider, env));
+}
+
+function costHints(providersAttempted = [], rerankProvidersUsed = []) {
+  return {
+    paid_search_calls: providersAttempted.filter((provider) => PAID_SEARCH_PROVIDERS.has(provider)).length,
+    paid_rerank_calls: rerankProvidersUsed.length,
+  };
 }
 
 async function searchProvider(provider, query, limit, env, options = {}) {
@@ -1145,7 +1184,7 @@ async function searxngSearch(query, limit, env, options = {}) {
   url.searchParams.set("pageno", "1");
   const headers = { accept: "application/json" };
   if (env.SEARXNG_SECRET) headers.authorization = `Bearer ${env.SEARXNG_SECRET}`;
-  const response = await cachedFetch(new Request(url, { headers, redirect: "manual" }), 180);
+  const response = await cachedFetch(new Request(url, { headers, redirect: "manual", signal: options.signal }), 180);
   if (!response.ok) throw new Error(`searxng search failed: ${response.status}`);
   const data = await readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, "searxng");
   return (data.results || []).slice(0, limit).map((r) => normalizeResult({
@@ -1221,6 +1260,7 @@ async function zhipuSearch(query, limit, env, options = {}) {
   const response = await fetch("https://open.bigmodel.cn/api/paas/v4/web_search", {
     method: "POST",
     redirect: "manual",
+    signal: options.signal,
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -1255,6 +1295,7 @@ async function bochaSearch(query, limit, env, options = {}) {
   const response = await fetch("https://api.bochaai.com/v1/web-search", {
     method: "POST",
     redirect: "manual",
+    signal: options.signal,
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -1302,6 +1343,7 @@ async function bochaAiSearch(query, limit, env, options = {}) {
   const response = await fetch("https://api.bocha.cn/v1/ai-search", {
     method: "POST",
     redirect: "manual",
+    signal: options.signal,
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -1340,6 +1382,7 @@ async function braveSearch(query, limit, env, options = {}) {
   }
   const response = await fetch(url, {
     redirect: "manual",
+    signal: options.signal,
     headers: {
       accept: "application/json",
       "x-subscription-token": env.BRAVE_SEARCH_API_KEY,
@@ -1369,6 +1412,7 @@ async function serperSearch(query, limit, env, options = {}) {
   const response = await fetch("https://google.serper.dev/search", {
     method: "POST",
     redirect: "manual",
+    signal: options.signal,
     headers: {
       "content-type": "application/json",
       "x-api-key": env.SERPER_API_KEY,
@@ -1395,6 +1439,7 @@ async function tavilySearch(query, limit, env, options = {}) {
   const response = await fetch("https://api.tavily.com/search", {
     method: "POST",
     redirect: "manual",
+    signal: options.signal,
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${env.TAVILY_API_KEY}`,
@@ -1463,6 +1508,7 @@ async function duckDuckGoSearch(query, limit, env, options = {}) {
   const language = options.language || env.DUCKDUCKGO_LANGUAGE || env.BING_MARKET || "en-US";
   const { response } = await safeFetch(parsedEndpoint.toString(), {
     method: "POST",
+    signal: options.signal,
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       "user-agent": "Mozilla/5.0 (compatible; search-gateway/0.2)",
@@ -1518,6 +1564,7 @@ async function bingSearch(query, limit, env, options = {}) {
       "user-agent": "Mozilla/5.0 (compatible; search-gateway/0.1)",
       "accept-language": `${market},en;q=0.8,zh-CN;q=0.6`,
     },
+    signal: options.signal,
   });
   if (!response.ok) throw new Error(`bing search failed: ${response.status}`);
   const text = await readTextLimited(response, MAX_SEARCH_HTML_BYTES);
@@ -1527,7 +1574,7 @@ async function bingSearch(query, limit, env, options = {}) {
 async function collectProviderResults(providers, query, searchLimit, env, searchOptions, searchTimeoutMs) {
   return Promise.all(providers.map(async (provider) => {
     try {
-      const results = await withTimeout(searchProvider(provider, query, searchLimit, env, searchOptions), searchTimeoutMs, provider);
+      const results = await withTimeout((signal) => searchProvider(provider, query, searchLimit, env, { ...searchOptions, signal }), searchTimeoutMs, provider);
       return { provider, results, warning: results.length === 0 ? `${provider}: empty results` : "" };
     } catch (error) {
       return { provider, results: [], warning: `${provider}: ${error.message}` };
@@ -1554,6 +1601,9 @@ async function aggregateSearch(providers, context) {
     language: context.language,
     count: results.length,
     results,
+    providers_attempted: providers,
+    cost_hints: costHints(providers, reranked.providers_attempted),
+    ...(reranked.providers_attempted.length ? { rerank_providers_attempted: reranked.providers_attempted } : {}),
     ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
     fetched_at: new Date().toISOString(),
     warnings: context.warnings,
@@ -1563,9 +1613,11 @@ async function aggregateSearch(providers, context) {
 }
 
 async function fallbackSearch(providers, context) {
+  const attempted = [...(context.providersAttemptedPrefix || [])];
   for (const provider of providers) {
+    attempted.push(provider);
     try {
-      const providerResults = await withTimeout(searchProvider(provider, context.query, context.searchLimit, context.env, context.searchOptions), context.searchTimeoutMs, provider);
+      const providerResults = await withTimeout((signal) => searchProvider(provider, context.query, context.searchLimit, context.env, { ...context.searchOptions, signal }), context.searchTimeoutMs, provider);
       const candidates = mergeRankResults(providerResults, context.query, context.searchLimit, context.freshness);
       const reranked = await maybeRerankResults(candidates, context.query, context.limit, context.body, context.env, context.warnings);
       const results = reranked.results;
@@ -1580,6 +1632,9 @@ async function fallbackSearch(providers, context) {
           language: context.language,
           count: results.length,
           results,
+          providers_attempted: [...attempted],
+          cost_hints: costHints(attempted, reranked.providers_attempted),
+          ...(reranked.providers_attempted.length ? { rerank_providers_attempted: reranked.providers_attempted } : {}),
           ...(reranked.providers_used.length ? { rerank_providers_used: reranked.providers_used } : {}),
           fetched_at: new Date().toISOString(),
           warnings: context.warnings,
@@ -1602,6 +1657,8 @@ async function fallbackSearch(providers, context) {
     error: "all search providers failed",
     provider: context.requestedProvider,
     count: 0,
+    providers_attempted: attempted,
+    cost_hints: costHints(attempted, []),
     fetched_at: new Date().toISOString(),
     warnings: context.warnings,
     details: context.warnings,
@@ -1613,7 +1670,7 @@ async function balancedSearch(providerOrder, context) {
   const firstWave = providerOrder.slice(0, Math.min(3, providerOrder.length));
   const firstWaveResult = await aggregateSearch(firstWave, context);
   if (firstWaveResult.results.length > 0) return firstWaveResult;
-  return fallbackSearch(providerOrder.slice(firstWave.length), context);
+  return fallbackSearch(providerOrder.slice(firstWave.length), { ...context, providersAttemptedPrefix: firstWave });
 }
 
 
@@ -1635,8 +1692,9 @@ async function runSearch(body, env) {
   const language = normalizeLanguage(body.language, query);
   const searchOptions = { freshness, language };
   const warnings = [];
-  const providerOrder = configuredProviders(requestedProvider, env);
-  const searchBody = { ...body, rerank: body.rerank === undefined && mode === "fast" ? false : body.rerank };
+  const providerOrder = configuredProviders(requestedProvider, env, { includeBochaAi: mode === "thorough" });
+  const implicitRerank = mode === "thorough" ? body.rerank : false;
+  const searchBody = { ...body, rerank: body.rerank === undefined ? implicitRerank : body.rerank };
   const rerankProviders = configuredRerankProviders(searchBody.rerank, env);
   const defaultRerankPool = mode === "thorough" ? MAX_LIMIT : limit * 3;
   const rerankPool = Math.min(MAX_LIMIT, Math.max(limit, Number.parseInt(searchBody.rerank_pool ?? String(defaultRerankPool), 10) || limit));
@@ -1682,6 +1740,7 @@ function redirectInit(init = {}, status = 0) {
     headers: safeRedirectHeaders(init),
     body: rewriteToGet ? undefined : init.body,
     redirect: "manual",
+    signal: init.signal,
   };
 }
 
@@ -2001,10 +2060,11 @@ async function runBalance(body = {}, env = {}) {
   if (provider === "bocha") return runBochaBalance(env);
   return { ok: false, status: 400, error: `unsupported balance provider: ${provider}` };
 }
-async function postRerankJson(provider, url, apiKey, payload) {
+async function postRerankJson(provider, url, apiKey, payload, options = {}) {
   const response = await fetch(url, {
     method: "POST",
     redirect: "manual",
+    signal: options.signal,
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -2047,17 +2107,17 @@ async function callRerankProvider(provider, query, documents, env, options = {})
   const model = cleanText(rerankModelFor(provider, env, cleanText(options.model || "")));
   let data;
   if (provider === "bocha_rerank") {
-    data = await postRerankJson(provider, env.BOCHA_RERANK_ENDPOINT || "https://api.bocha.cn/v1/rerank", env.BOCHA_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+    data = await postRerankJson(provider, env.BOCHA_RERANK_ENDPOINT || "https://api.bocha.cn/v1/rerank", env.BOCHA_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments }, options);
     const code = Number(data.code || 200);
     if (code !== 200) throw new Error(`${provider} failed: ${data.code} ${data.msg || ""}`.trim());
   } else if (provider === "cohere_rerank") {
-    data = await postRerankJson(provider, env.COHERE_RERANK_ENDPOINT || "https://api.cohere.com/v2/rerank", env.COHERE_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+    data = await postRerankJson(provider, env.COHERE_RERANK_ENDPOINT || "https://api.cohere.com/v2/rerank", env.COHERE_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments }, options);
   } else if (provider === "jina_rerank") {
-    data = await postRerankJson(provider, env.JINA_RERANK_ENDPOINT || "https://api.jina.ai/v1/rerank", env.JINA_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+    data = await postRerankJson(provider, env.JINA_RERANK_ENDPOINT || "https://api.jina.ai/v1/rerank", env.JINA_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments }, options);
   } else if (provider === "voyage_rerank") {
-    data = await postRerankJson(provider, env.VOYAGE_RERANK_ENDPOINT || "https://api.voyageai.com/v1/rerank", env.VOYAGE_API_KEY, { model, query, documents, top_k: topN, return_documents: returnDocuments });
+    data = await postRerankJson(provider, env.VOYAGE_RERANK_ENDPOINT || "https://api.voyageai.com/v1/rerank", env.VOYAGE_API_KEY, { model, query, documents, top_k: topN, return_documents: returnDocuments }, options);
   } else if (provider === "siliconflow_rerank") {
-    data = await postRerankJson(provider, env.SILICONFLOW_RERANK_ENDPOINT || "https://api.siliconflow.cn/v1/rerank", env.SILICONFLOW_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments });
+    data = await postRerankJson(provider, env.SILICONFLOW_RERANK_ENDPOINT || "https://api.siliconflow.cn/v1/rerank", env.SILICONFLOW_API_KEY, { model, query, documents, top_n: topN, return_documents: returnDocuments }, options);
   } else {
     throw new Error(`unsupported rerank provider: ${provider}`);
   }
@@ -2128,7 +2188,7 @@ async function runBatchFetch(body, env = {}, parentRequestId = requestId()) {
 }
 
 async function runSearchFetch(body, env = {}, parentRequestId = requestId()) {
-  const fetchTop = Math.min(Math.max(Number.parseInt(body.fetch_top ?? "3", 10) || 3, 1), 10);
+  const fetchTop = Math.min(Math.max(Number.parseInt(body.fetch_top ?? String(DEFAULT_SEARCH_FETCH_TOP), 10) || DEFAULT_SEARCH_FETCH_TOP, 1), 10);
   const mode = fetchMode(body.fetch_mode || "chunks");
   if (!mode) return { ok: false, status: 400, error: `unsupported fetch mode: ${body.fetch_mode}` };
   const search = await runSearch(body, env);

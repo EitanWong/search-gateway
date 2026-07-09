@@ -404,6 +404,26 @@ try {
     assert.equal(calls.length, 3);
   }
 
+  // balanced fallback reports the full attempted provider set, including the failed first wave.
+  {
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) return jsonResponse({ web: { results: [] } });
+      if (url === 'https://google.serper.dev/search') return jsonResponse({ organic: [] });
+      if (url === 'https://api.tavily.com/search') return jsonResponse({ results: [] });
+      if (url.startsWith('https://html.duckduckgo.com/html/')) return htmlResponse('');
+      if (url.startsWith('https://www.bing.com/search')) return htmlResponse('<li class="b_algo"><h2><a href="https://fallback.test/a">Fallback hit</a></h2><p>agent search</p></li>');
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const res = await post('/search', { query: 'agent search', provider: 'auto', mode: 'balanced', limit: 3 });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.provider, 'bing');
+    assert.deepEqual(data.providers_attempted, ['brave', 'serper', 'tavily', 'duckduckgo', 'bing']);
+    assert.equal(data.cost_hints.paid_search_calls, 3);
+  }
+
   // fast mode disables implicit rerank even when rerank credentials are configured.
   {
     mockFetch(async (input) => {
@@ -419,6 +439,43 @@ try {
     assert.equal(data.mode, 'fast');
     assert.equal(data.strategy, 'fallback');
     assert.equal(data.rerank_providers_used, undefined);
+  }
+
+  // default balanced mode is cost-safe: configured rerank keys do not trigger implicit rerank.
+  {
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) return jsonResponse({ web: { results: [{ title: 'Balanced no rerank', url: 'https://balanced-rerank.test/a', description: 'agent search' }] } });
+      if (url === 'https://google.serper.dev/search') return jsonResponse({ organic: [] });
+      if (url === 'https://api.tavily.com/search') return jsonResponse({ results: [] });
+      if (url.includes('/rerank')) throw new Error('rerank should not be called by default in balanced mode');
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const balancedRerankEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BRAVE_SEARCH_API_KEY: 'brave-key', SERPER_API_KEY: 'serper-key', TAVILY_API_KEY: 'tavily-key', COHERE_API_KEY: 'cohere-key' };
+    const res = await post('/search', { query: 'agent search', provider: 'auto', mode: 'balanced', limit: 3 }, balancedRerankEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.mode, 'balanced');
+    assert.equal(data.rerank_providers_used, undefined);
+    assert.equal(data.cost_hints.paid_rerank_calls, 0);
+  }
+
+  // provider timeouts abort the underlying fetch instead of only abandoning Promise.race.
+  {
+    let signal;
+    mockFetch(async (_input, init) => {
+      signal = init.signal;
+      return new Promise(() => {});
+    });
+
+    const timeoutEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BRAVE_SEARCH_API_KEY: 'brave-key', SEARCH_PROVIDER_TIMEOUT_MS: '1000' };
+    const res = await post('/search', { query: 'agent search', provider: 'brave', mode: 'fast', limit: 3 }, timeoutEnv);
+    assert.equal(res.status, 502);
+    const data = await res.json();
+    assert.equal(data.ok, false);
+    assert.equal(signal.aborted, true);
+    assert.match(data.warnings[0], /brave timed out after 1000ms/);
   }
 
   // invalid mode is rejected before provider fetch.
@@ -473,6 +530,61 @@ try {
     assert.deepEqual(data.rerank_providers_used, ['cohere_rerank', 'jina_rerank']);
     assert.equal(data.results[0].canonical_url, 'https://best.test/b');
     assert.ok(data.results[0].rerank_score > data.results[1].rerank_score);
+  }
+
+  // cost hints count attempted paid rerank calls, including providers that return an error.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) return jsonResponse({ web: { results: [
+        { title: 'Result A', url: 'https://rerank-cost.test/a', description: 'agent search' },
+        { title: 'Result B', url: 'https://rerank-cost.test/b', description: 'agent gateway' },
+      ] } });
+      if (url === 'https://api.cohere.com/v2/rerank') {
+        const payload = JSON.parse(init.body);
+        assert.equal(payload.documents.length, 2);
+        return jsonResponse({ results: [{ index: 1, relevance_score: 0.95 }, { index: 0, relevance_score: 0.1 }] });
+      }
+      if (url === 'https://api.jina.ai/v1/rerank') return jsonResponse({ error: 'temporary failure' }, { status: 503 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const rerankEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BRAVE_SEARCH_API_KEY: 'brave-key', COHERE_API_KEY: 'cohere-key', JINA_API_KEY: 'jina-key' };
+    const res = await post('/search', { query: 'agent search', provider: 'brave', limit: 2, rerank: 'cohere_rerank,jina_rerank' }, rerankEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data.rerank_providers_used, ['cohere_rerank']);
+    assert.deepEqual(data.rerank_providers_attempted, ['cohere_rerank', 'jina_rerank']);
+    assert.equal(data.cost_hints.paid_rerank_calls, 2);
+  }
+
+  // rerank is blended with the base search score so a tiny rerank edge cannot bury much stronger trusted results.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) {
+        return jsonResponse({ web: { results: [
+          { title: 'Cloudflare Workers 1101 error documentation', url: 'https://developers.cloudflare.com/workers/observability/errors/1101', description: 'Official Cloudflare Workers 1101 error docs and troubleshooting' },
+          { title: 'Cloudflare Worker 1101 error fixed free ultimate coupon', url: 'https://seo-fix.example/cloudflare-worker-1101-error', description: 'free download coupon quick fix guide' },
+        ] } });
+      }
+      if (url === 'https://api.cohere.com/v2/rerank') {
+        const payload = JSON.parse(init.body);
+        assert.equal(payload.documents.length, 2);
+        return jsonResponse({ results: [
+          { index: 1, relevance_score: 0.51 },
+          { index: 0, relevance_score: 0.50 },
+        ] });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const rerankEnv = { SEARCH_GATEWAY_TOKEN: 'dev-token', BRAVE_SEARCH_API_KEY: 'brave-key', COHERE_API_KEY: 'cohere-key' };
+    const res = await post('/search', { query: 'Cloudflare Worker 1101 error', provider: 'brave', limit: 2, rerank: 'cohere_rerank' }, rerankEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.results[0].canonical_url, 'https://developers.cloudflare.com/workers/observability/errors/1101');
+    assert.ok(data.results[0].rerank_score > 0);
   }
 
   // aggregate diagnostics are stable in provider order even when providers fail or return empty.
@@ -947,11 +1059,13 @@ try {
     assert.match(data.warnings[0], /DUCKDUCKGO_ENDPOINT blocked: private IP blocked/);
   }
 
-  // auto provider selection works with zero paid keys and never requires third-party search APIs.
+  // auto provider selection works with zero paid keys and keeps Bocha AI Search opt-in for cost safety.
   {
     assert.deepEqual(_test.configuredProviders('auto', {}), ['duckduckgo', 'bing']);
     assert.deepEqual(_test.configuredProviders('auto', { SEARXNG_URL: 'https://searx.test' }), ['searxng', 'duckduckgo', 'bing']);
-    assert.deepEqual(_test.configuredProviders('auto', { ZHIPU_API_KEY: 'zhipu-token', BOCHA_API_KEY: 'bocha-token' }), ['zhipu', 'bocha', 'bocha_ai', 'duckduckgo', 'bing']);
+    assert.deepEqual(_test.configuredProviders('auto', { ZHIPU_API_KEY: 'zhipu-token', BOCHA_API_KEY: 'bocha-token' }), ['zhipu', 'bocha', 'duckduckgo', 'bing']);
+    assert.deepEqual(_test.configuredProviders('auto', { BOCHA_API_KEY: 'bocha-token' }, { includeBochaAi: true }), ['bocha', 'bocha_ai', 'duckduckgo', 'bing']);
+    assert.deepEqual(_test.configuredProviders('bocha_ai', { BOCHA_API_KEY: 'bocha-token' }), ['bocha_ai']);
   }
 
   // fast mode is sequential fallback and returns warnings from failed/empty earlier providers.
@@ -974,6 +1088,8 @@ try {
     assert.equal(data.provider, 'tavily');
     assert.equal(data.count, 1);
     assert.deepEqual(data.warnings, ['brave: empty results', 'serper: serper search failed: 503']);
+    assert.deepEqual(data.providers_attempted, ['brave', 'serper', 'tavily']);
+    assert.equal(data.cost_hints.paid_search_calls, 3);
   }
 
   // fetch returns extracted content for non-2xx responses and marks ok false.
@@ -1446,6 +1562,29 @@ try {
     assert.deepEqual(seenFetches.sort(), ['https://source.test/one', 'https://source.test/two']);
     assert.equal(data.fetched.results[0].mode, 'metadata');
     assert.equal(data.fetched.results[0].title, 'One');
+  }
+
+  // /search_fetch defaults to fetching two pages to keep agent calls lighter; callers can raise fetch_top explicitly.
+  {
+    const seenFetches = [];
+    mockFetch(async (input) => {
+      const url = String(input.url || input);
+      if (url.startsWith('https://api.search.brave.com/')) {
+        return jsonResponse({ web: { results: [
+          { title: 'First source', url: 'https://default-fetch.test/one', description: 'agent native source one' },
+          { title: 'Second source', url: 'https://default-fetch.test/two', description: 'agent native source two' },
+          { title: 'Third source', url: 'https://default-fetch.test/three', description: 'default should not fetch third' },
+        ] } });
+      }
+      seenFetches.push(url);
+      return htmlResponse('<article><h1>Fetched</h1><p>body</p></article>');
+    });
+    const res = await post('/search_fetch', { query: 'agent native web research', provider: 'brave', limit: 3, fetch_mode: 'metadata' });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.fetch_top, 2);
+    assert.equal(data.fetched.success_count, 2);
+    assert.deepEqual(seenFetches.sort(), ['https://default-fetch.test/one', 'https://default-fetch.test/two']);
   }
 
   // /fetch does not reflect private canonical or markdown link URLs.

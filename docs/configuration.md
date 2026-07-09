@@ -71,10 +71,10 @@ Authorization: Bearer <token>
 With `provider: "auto"`, configured providers are tried before no-key fallbacks:
 
 ```text
-SearXNG → Zhipu → Bocha Web → Bocha AI → Brave → Serper → Tavily → DuckDuckGo HTML → Bing HTML
+SearXNG → Zhipu → Bocha Web → Brave → Serper → Tavily → DuckDuckGo HTML → Bing HTML
 ```
 
-If no paid provider keys are configured, the gateway still works through DuckDuckGo/Bing HTML where reachable.
+If no paid provider keys are configured, the gateway still works through DuckDuckGo/Bing HTML where reachable. Bocha AI Search is costlier than Bocha Web Search, so `bocha_ai` stays opt-in for normal `auto` searches and is included automatically only in `mode: "thorough"`.
 
 | Name | Type | Required? | Description |
 |---|---|---:|---|
@@ -261,13 +261,21 @@ Private mode without token:
 | `query` | required | string | Search query. Max 500 chars. |
 | `limit` | `8` | 1–20 | Max results. |
 | `provider` | `auto` | `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing` | Provider to use. |
-| `mode` | `balanced` | `fast`, `balanced`, `thorough` | Search execution mode. `fast` is sequential and disables implicit rerank; `balanced` parallelizes the first provider wave; `thorough` aggregates all configured providers and reranks when configured. |
+| `mode` | `balanced` | `fast`, `balanced`, `thorough` | Search execution mode. `fast` is sequential and disables implicit rerank; `balanced` parallelizes the first provider wave without implicit rerank; `thorough` aggregates all configured providers and reranks when configured. |
 | `freshness` | `none` | `none`, `auto`, `day`, `week`, `month`, `year` | Recency hint. `auto` detects news/latest intent. |
 | `language` | `auto` | `auto`, `zh-CN`, `en-US`, provider-supported values | Language/market hint. |
-| `rerank` | `auto` | `auto`, `false`, comma-separated rerank providers | Optional second-stage rerank. `auto` uses configured rerank providers; use `false` to disable per request. |
+| `rerank` | mode-dependent | `auto`, `false`, comma-separated rerank providers | Optional second-stage rerank. Omitted means disabled in `fast`/`balanced` and `auto` in `thorough`; pass `auto` or provider names to enable explicitly. |
 | `rerank_pool` | `limit * 3` | 1–20 | Candidate pool size before rerank. Only used when a rerank provider is configured. |
 
 Supported rerank providers: `bocha_rerank`, `cohere_rerank`, `jina_rerank`, `voyage_rerank`, `siliconflow_rerank`.
+
+When `/search` rerank is enabled, the final ordering blends rerank scores with the base search credibility/relevance score. This keeps rerank useful for semantic relevance while preserving official-source, anti-spam, freshness, and consensus signals from the first-stage ranker.
+
+Search responses include diagnostics for cost and latency tuning:
+
+- `providers_attempted` lists search providers actually called, including failed/empty fallback attempts.
+- `rerank_providers_attempted` lists rerank providers called when rerank is enabled.
+- `cost_hints.paid_search_calls` and `cost_hints.paid_rerank_calls` count paid-provider attempts, not just successful providers.
 
 ### `/rerank`
 
@@ -338,7 +346,7 @@ Max 10 fetch requests per call.
 {
   "query": "Cloudflare Worker 1101 error",
   "limit": 8,
-  "fetch_top": 3,
+  "fetch_top": 2,
   "provider": "auto",
   "mode": "balanced",
   "freshness": "none",

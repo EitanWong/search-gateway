@@ -95,8 +95,8 @@ SEARCH_SCHEMA = {
     "properties": {
         "query": {"type": "string", "description": "Search query."},
         "limit": {"type": "integer", "description": "Max results, default 8, max 20."},
-        "provider": {"type": "string", "description": "auto, searxng, brave, serper, tavily, duckduckgo, or bing. Default auto. `auto` works even with zero paid provider keys via DuckDuckGo/Bing HTML fallback."},
-        "mode": {"type": "string", "description": "fast, balanced, or thorough. Default balanced. fast is sequential/no implicit rerank; balanced parallelizes the first provider wave; thorough aggregates all configured providers."},
+        "provider": {"type": "string", "description": "auto, searxng, zhipu, bocha, bocha_ai, brave, serper, tavily, duckduckgo, or bing. Default auto. `auto` works even with zero paid provider keys via DuckDuckGo/Bing HTML fallback."},
+        "mode": {"type": "string", "description": "fast, balanced, or thorough. Default balanced. fast is sequential/no implicit rerank; balanced parallelizes the first provider wave without implicit rerank; thorough aggregates all configured providers and may rerank."},
         "freshness": {"type": "string", "description": "none, auto, day, week, month, or year. Default none. auto detects recency intent from the query."},
         "language": {"type": "string", "description": "auto, zh-CN, en-US, or provider-supported locale/market. Default auto."},
     },
@@ -143,7 +143,7 @@ SEARCH_FETCH_SCHEMA = {
     "properties": {
         "query": {"type": "string", "description": "Search query."},
         "limit": {"type": "integer", "description": "Max search results, default 8, max 20."},
-        "fetch_top": {"type": "integer", "description": "How many top search results to fetch, default 3, max 10."},
+        "fetch_top": {"type": "integer", "description": "How many top search results to fetch, default 2, max 10."},
         "provider": SEARCH_SCHEMA["properties"]["provider"],
         "mode": SEARCH_SCHEMA["properties"]["mode"],
         "freshness": SEARCH_SCHEMA["properties"]["freshness"],
@@ -226,7 +226,7 @@ def register(ctx):
         payload = {
             "query": query,
             "limit": _bounded_int(args.get("limit"), 8, 1, 20),
-            "fetch_top": _bounded_int(args.get("fetch_top"), 3, 1, 10),
+            "fetch_top": _bounded_int(args.get("fetch_top"), 2, 1, 10),
             "provider": str(args.get("provider", "auto") or "auto"),
             "mode": str(args.get("mode", "balanced") or "balanced"),
             "freshness": str(args.get("freshness", "none") or "none"),

@@ -158,11 +158,11 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 
 Providers: `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing`.
 
-`bocha` uses Bocha Web Search (`/v1/web-search`) for Bing-compatible web results. `bocha_ai` uses Bocha AI Search (`/v1/ai-search`) and extracts `source/webpage` messages into the same normalized result schema; modal cards, generated answers, and follow-up questions are intentionally ignored by `/search` for compatibility.
+`bocha` uses Bocha Web Search (`/v1/web-search`) for Bing-compatible web results. `bocha_ai` uses Bocha AI Search (`/v1/ai-search`) and extracts `source/webpage` messages into the same normalized result schema; modal cards, generated answers, and follow-up questions are intentionally ignored by `/search` for compatibility. For cost safety, `provider: "auto"` does not include `bocha_ai` unless `mode: "thorough"`; request `provider: "bocha_ai"` explicitly when you want AI Search.
 
 Bocha pricing and quota planning notes are in [docs/bocha-pricing.md](docs/bocha-pricing.md). In particular, Tier 0 accounts are limited to `1 QPS`, `30 QPM`, and `1000 QPD`; use `SEARCH_RATE_LIMIT_PER_MINUTE` and Cloudflare rate limiting for public deployments.
 
-Rerank is a second-stage ranking layer for `/search`. When any supported rerank provider is configured, `/search` defaults to `rerank: "auto"`, expands the first-stage candidate pool to `min(20, limit * 3)`, calls configured rerank providers, and aggregates their normalized scores. Disable it per request with `"rerank": false` or select providers with `"rerank": "cohere_rerank,jina_rerank"`.
+Rerank is a second-stage ranking layer for `/search`. To keep the default `balanced` mode cost-safe, implicit rerank only happens in `mode: "thorough"`; use `"rerank": "auto"` or a comma-separated provider list to enable it per request. When rerank is enabled, the gateway expands the first-stage candidate pool to `min(20, limit * 3)`, calls configured rerank providers, and blends rerank scores with the base credibility/relevance score so tiny rerank differences do not bury much stronger trusted results.
 
 Supported rerank providers: `bocha_rerank`, `cohere_rerank`, `jina_rerank`, `voyage_rerank`, `siliconflow_rerank`. DashScope/Qwen3 Rerank and VikingDB are tracked as future adapters pending verified standalone HTTP request/response shape.
 
@@ -241,7 +241,7 @@ Guardrails: private/loopback URLs are blocked, JSON body and URL/query lengths a
 {
   "query": "agent native web research",
   "limit": 8,
-  "fetch_top": 3,
+  "fetch_top": 2,
   "provider": "auto",
   "mode": "balanced",
   "freshness": "auto",
