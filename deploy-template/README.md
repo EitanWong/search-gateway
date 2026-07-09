@@ -96,6 +96,8 @@ If any rerank provider is configured, `/search` can use second-stage reranking a
 
 Use this when the upstream template gets fixes or improvements.
 
+This repository includes a weekly upstream check. When upstream changes, it opens a pull request instead of pushing directly to your production branch.
+
 ```text
 GitHub → this repository → Actions → Update from upstream → Run workflow
 ```
@@ -108,7 +110,15 @@ Recommended inputs:
 | `upstream_ref` | `main` |
 | `preserve_wrangler` | `true` |
 
-The workflow opens a PR. Review it, merge it, and Cloudflare should deploy the merged update.
+The workflow validates the updated template before opening a PR:
+
+```bash
+npm ci
+npm run build
+npm run dry-run
+```
+
+Review the PR, merge it, and Cloudflare should deploy the merged update.
 
 Use a tag such as `v0.1.0` instead of `main` only when you want a pinned update.
 

@@ -8,12 +8,15 @@ Cloudflare's template import creates **your own repository**, not a GitHub fork.
 
 ```text
 GitHub Actions → Update from upstream → Run workflow
+→ workflow validates the updated template
 → workflow opens an update PR
 → you review and merge
 → Cloudflare deploys from your repository
 ```
 
 The workflow does **not** push directly to your production branch.
+
+The workflow also runs weekly as a safety net. If upstream changed, it opens the same reviewable PR. If nothing changed, it exits with **Already up to date**.
 
 ## Before you start
 
@@ -82,9 +85,19 @@ upstream_ref = main
 preserve_wrangler = true
 ```
 
+You can also do nothing and let the weekly scheduled run check upstream automatically.
+
 ### 4. Wait for the workflow result
 
-The workflow downloads upstream `deploy-template/`, copies template files into an update branch, and opens a pull request.
+The workflow downloads upstream `deploy-template/`, copies template files into an update branch, validates the result, and opens a pull request.
+
+Validation before PR creation:
+
+```bash
+npm ci
+npm run build
+npm run dry-run
+```
 
 Expected result:
 
@@ -178,6 +191,20 @@ Recommended:
 Read and write permissions
 Allow GitHub Actions to create and approve pull requests
 ```
+
+### The weekly update check is too noisy
+
+Open `.github/workflows/update-from-upstream.yml` and remove the `schedule:` block. You can still run updates manually from the Actions tab.
+
+### The workflow fails during validation
+
+Open the failed Actions run and inspect the `Validate updated template` step. Common causes:
+
+- A local `wrangler.toml` customization is invalid with the new Worker code.
+- Your generated repository has local edits that conflict with upstream template assumptions.
+- Upstream introduced a configuration migration; check upstream release notes before merging.
+
+The update PR is intentionally not opened when validation fails, so broken template updates do not reach your production branch by accident.
 
 ### The update PR changes `wrangler.toml`
 

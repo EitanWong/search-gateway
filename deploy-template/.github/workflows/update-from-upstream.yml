@@ -19,10 +19,17 @@ on:
         options:
           - 'true'
           - 'false'
+  schedule:
+    # Weekly safety net. Opens a PR only when upstream deploy-template changed.
+    - cron: '0 9 * * 1'
 
 permissions:
   contents: write
   pull-requests: write
+
+concurrency:
+  group: update-from-upstream-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -32,10 +39,18 @@ jobs:
       - name: Checkout deployment repo
         uses: actions/checkout@v4
 
-      - name: Download upstream deploy template
+      - name: Resolve update inputs
+        run: |
+          set -euo pipefail
+          echo "UPSTREAM_REPOSITORY=${UPSTREAM_REPOSITORY:-EitanWong/search-gateway}" >> "$GITHUB_ENV"
+          echo "UPSTREAM_REF=${UPSTREAM_REF:-main}" >> "$GITHUB_ENV"
+          echo "PRESERVE_WRANGLER=${PRESERVE_WRANGLER:-true}" >> "$GITHUB_ENV"
         env:
-          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
-          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          UPSTREAM_REPOSITORY: ${{ github.event.inputs.upstream_repository }}
+          UPSTREAM_REF: ${{ github.event.inputs.upstream_ref }}
+          PRESERVE_WRANGLER: ${{ github.event.inputs.preserve_wrangler }}
+
+      - name: Download upstream deploy template
         run: |
           set -euo pipefail
           rm -rf /tmp/search-gateway-archive /tmp/search-gateway-upstream
@@ -50,8 +65,6 @@ jobs:
           rsync -a "$TEMPLATE_DIR/" /tmp/search-gateway-upstream/
 
       - name: Sync template files
-        env:
-          PRESERVE_WRANGLER: ${{ inputs.preserve_wrangler }}
         run: |
           set -euo pipefail
           rm -rf \
@@ -65,20 +78,39 @@ jobs:
           fi
           cp -a /tmp/search-gateway-upstream/. ./
 
-      - name: Show changes
-        run: git status --short
-
-      - name: Create update pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
-          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+      - name: Check for changes
+        id: changes
         run: |
           set -euo pipefail
-          if git diff --quiet; then
+          git status --short
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Already up to date."
-            exit 0
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate updated template
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm run dry-run
+
+      - name: Create update pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           BRANCH="update/search-gateway-${UPSTREAM_REF//[^A-Za-z0-9._-]/-}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -88,7 +120,9 @@ jobs:
           git push --force-with-lease origin "$BRANCH"
           gh pr create \
             --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
-            --body "Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.\n\nReview notes:\n- By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.\n- Check upstream release notes for any required configuration changes before merging.\n- After merge, Cloudflare's Git integration should deploy the updated Worker." \
+            --body "Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.\n\nValidation run before opening this PR:\n- npm ci\n- npm run build\n- npm run dry-run\n\nReview notes:\n- By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.\n- Check upstream release notes for any required configuration changes before merging.\n- After merge, Cloudflare's Git integration should deploy the updated Worker." \
             --base "${GITHUB_REF_NAME}" \
             --head "$BRANCH" \
-            || gh pr edit "$BRANCH" --title "chore: update search-gateway from upstream ${UPSTREAM_REF}"
+            || gh pr edit "$BRANCH" \
+              --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
+              --body "Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.\n\nValidation run before opening this PR:\n- npm ci\n- npm run build\n- npm run dry-run\n\nReview notes:\n- By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.\n- Check upstream release notes for any required configuration changes before merging.\n- After merge, Cloudflare's Git integration should deploy the updated Worker."
