@@ -5,14 +5,14 @@ This repository is designed for Cloudflare's Deploy to Workers flow with **zero 
 ## Deploy button
 
 ```md
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway.git)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway/tree/main/deploy-template)
 ```
 
 The button opens Cloudflare's Workers deploy flow and imports this public GitHub repository.
 
 ## What should be prefilled
 
-Cloudflare imports the repository root. The root intentionally contains the deployable Worker surface:
+Cloudflare imports the `deploy-template/` subdirectory. That directory intentionally contains the deployable Worker surface:
 
 - `wrangler.toml` — minimal TOML Worker config with Worker name, entrypoint, conservative compatibility date, and default vars.
 - `src/index.js` — Worker entrypoint.
@@ -24,7 +24,7 @@ Expected Deploy to Workers settings:
 
 | Setting | Expected value |
 |---|---|
-| Repository | `https://github.com/EitanWong/search-gateway.git` |
+| Repository | `https://github.com/EitanWong/search-gateway/tree/main/deploy-template` |
 | Worker name | `search-gateway` |
 | Install command | `npm ci` |
 | Build command | `npm run build` |
@@ -32,10 +32,10 @@ Expected Deploy to Workers settings:
 | Config file | `wrangler.toml` |
 | Required deploy-time secrets | none; configure `SEARCH_GATEWAY_TOKEN` after deploy before using `/search` or `/fetch` |
 
-If the dashboard asks for the repository URL manually, use the repository root URL:
+If the dashboard asks for the repository URL manually, use the subdirectory URL:
 
 ```text
-https://github.com/EitanWong/search-gateway.git
+https://github.com/EitanWong/search-gateway/tree/main/deploy-template
 ```
 
 ## Default auth mode
@@ -111,7 +111,7 @@ If you do not use the button:
 
 1. Go to Cloudflare Dashboard → Workers & Pages.
 2. Create application / Worker from GitHub repository.
-3. Enter `https://github.com/EitanWong/search-gateway.git`.
+3. Enter `https://github.com/EitanWong/search-gateway/tree/main/deploy-template`.
 4. Use `wrangler.toml` if the dashboard asks for a config file.
 5. Install command: `npm ci`.
 6. Build command: `npm run build`.
@@ -132,4 +132,4 @@ Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are conf
 
 ## Dashboard importer compatibility note
 
-Use the repository root URL for Deploy to Cloudflare. Although `create-cloudflare` can work with remote templates, Cloudflare Dashboard import paths are more reliable when the Deploy Button points at the repository root. The root contains the deployable Worker config (`wrangler.toml`), package scripts, and Cloudflare template metadata. The `deploy-template/` directory is kept only as a minimal local/CI compatibility fixture, not as the public Deploy Button target.
+Use the `deploy-template/` subdirectory URL for Deploy to Cloudflare. Although `create-cloudflare` can work with remote templates, Cloudflare Dashboard import paths are more reliable when the Deploy Button points directly at the deployable Worker directory. The `deploy-template/` directory contains the deployable Worker config (`wrangler.toml`) and package scripts. The repository root is kept for development, tests, docs, and integrations.

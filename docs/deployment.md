@@ -52,7 +52,7 @@ npm run dry-run
 
 ## Cloudflare configuration
 
-The repository root is the Cloudflare Dashboard one-click import target. `wrangler.toml` is intentionally minimal so both Dashboard import and normal `wrangler deploy` use the same deployable Worker config. The `deploy-template/` directory is only a local/CI compatibility fixture, not the public Deploy Button target.
+The `deploy-template/` subdirectory is the Cloudflare Dashboard one-click import target. `deploy-template/wrangler.toml` is intentionally minimal so Dashboard import has exactly one deployable Worker config. The repository root is kept for development, tests, docs, and integrations.
 
 Default values:
 
@@ -64,7 +64,7 @@ Default values:
 One-click template URL:
 
 ```text
-https://github.com/EitanWong/search-gateway.git
+https://github.com/EitanWong/search-gateway/tree/main/deploy-template
 ```
 
 ## GitHub deployment workflow

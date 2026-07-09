@@ -2,9 +2,9 @@
 
 Cloudflare Worker search/fetch gateway for agents running in restricted networks.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway.git)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway/tree/main/deploy-template)
 
-The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button imports the Worker with zero mandatory deploy-time fields, while runtime search/fetch endpoints are secure by default: set `SEARCH_GATEWAY_TOKEN` after deployment, or explicitly opt into development-only open mode with `SEARCH_GATEWAY_ALLOW_OPEN=true`.
+The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button imports the `deploy-template/` Worker subdirectory with zero mandatory deploy-time fields, while runtime search/fetch endpoints are secure by default: set `SEARCH_GATEWAY_TOKEN` after deployment, or explicitly opt into development-only open mode with `SEARCH_GATEWAY_ALLOW_OPEN=true`.
 
 ## Documentation
 
@@ -276,7 +276,7 @@ Use the button at the top of this README. The import flow requires no deploy-tim
 
 - build command: `npm run build`
 - deploy command: `npm run deploy`
-- Worker config: root `wrangler.toml`
+- Worker config: `deploy-template/wrangler.toml`
 - default search: no-key DuckDuckGo/Bing HTML fallbacks
 - default auth mode: secure-by-default; `/search` and `/fetch` return `503` until `SEARCH_GATEWAY_TOKEN` is configured
 
