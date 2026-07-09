@@ -8,7 +8,7 @@ For zero-config import, see [One-click Cloudflare deployment](cloudflare-one-cli
 - Cloudflare account
 - Wrangler authentication
 
-## Zero-config default
+## One-click public default
 
 The Worker can deploy without any secrets or provider keys:
 
@@ -18,13 +18,15 @@ npm run build
 npm run deploy
 ```
 
-Without `SEARCH_GATEWAY_TOKEN`, the Worker stays secure-by-default: `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` return `503` unless `SEARCH_GATEWAY_ALLOW_OPEN=true` is explicitly configured for local/temporary development. Search itself still works without paid provider keys through DuckDuckGo/Bing HTML fallbacks where reachable.
+By default, `SEARCH_GATEWAY_MODE=public`, so `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` work immediately after deployment. Search works without paid provider keys through DuckDuckGo/Bing HTML fallbacks where reachable.
 
-## Optional secure mode
+## Optional private mode
 
-For production or public endpoints, configure bearer auth after deployment:
+For long-running personal deployments, configure bearer auth after deployment:
 
 ```bash
+# In Cloudflare Dashboard → Worker → Settings → Variables:
+# set SEARCH_GATEWAY_MODE=private
 openssl rand -hex 32
 npx wrangler secret put SEARCH_GATEWAY_TOKEN
 ```
@@ -59,7 +61,7 @@ Default values:
 - Worker name: `search-gateway`
 - Entrypoint: `src/index.js`
 - Workers.dev enabled: `true`
-- Default vars: `BING_MARKET=en-US`, `DUCKDUCKGO_LANGUAGE=en-US`
+- Default vars: `SEARCH_GATEWAY_MODE=public`, `BING_MARKET=en-US`, `DUCKDUCKGO_LANGUAGE=en-US`
 
 One-click template URL:
 
@@ -77,6 +79,6 @@ Before running it, configure these GitHub repository secrets:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys must be configured on the Cloudflare Worker.
+Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are optional and configured on the Cloudflare Worker. Use `SEARCH_GATEWAY_TOKEN` when `SEARCH_GATEWAY_MODE=private`.
 
 Do not commit `.dev.vars`, `.env`, `.wrangler/`, `dist/`, or release-loop state.

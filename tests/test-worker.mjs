@@ -114,25 +114,25 @@ try {
     assert.equal(authedData.auth_required, true);
     assert.equal(authedData.auth_mode, 'bearer');
 
-    const misconfiguredHealth = await call('/health', {}, {});
-    assert.equal(misconfiguredHealth.status, 200);
-    const misconfiguredHealthData = await misconfiguredHealth.json();
-    assert.equal(misconfiguredHealthData.auth_configured, false);
-    assert.equal(misconfiguredHealthData.auth_required, true);
-    assert.equal(misconfiguredHealthData.auth_mode, 'misconfigured');
-    assert.equal(misconfiguredHealthData.setup.status, 'auth_not_configured');
-    assert.equal(misconfiguredHealthData.providers.duckduckgo, true);
+    const publicHealth = await call('/health', {}, {});
+    assert.equal(publicHealth.status, 200);
+    const publicHealthData = await publicHealth.json();
+    assert.equal(publicHealthData.auth_configured, false);
+    assert.equal(publicHealthData.auth_required, false);
+    assert.equal(publicHealthData.auth_mode, 'public');
+    assert.equal(publicHealthData.setup.status, 'public_mode');
+    assert.equal(publicHealthData.providers.duckduckgo, true);
 
-    const openHealth = await call('/health', {}, { SEARCH_GATEWAY_ALLOW_OPEN: 'true' });
-    assert.equal(openHealth.status, 200);
-    const openHealthData = await openHealth.json();
-    assert.equal(openHealthData.auth_configured, false);
-    assert.equal(openHealthData.auth_required, false);
-    assert.equal(openHealthData.auth_mode, 'open');
-    assert.equal(openHealthData.setup.status, 'explicit_open');
+    const privateMissingTokenHealth = await call('/health', {}, { SEARCH_GATEWAY_MODE: 'private' });
+    assert.equal(privateMissingTokenHealth.status, 200);
+    const privateMissingTokenHealthData = await privateMissingTokenHealth.json();
+    assert.equal(privateMissingTokenHealthData.auth_configured, false);
+    assert.equal(privateMissingTokenHealthData.auth_required, true);
+    assert.equal(privateMissingTokenHealthData.auth_mode, 'private_unconfigured');
+    assert.equal(privateMissingTokenHealthData.setup.status, 'token_required');
   }
 
-  // auth is enforced by default; explicit open mode only works when SEARCH_GATEWAY_ALLOW_OPEN=true.
+  // Public mode is the one-click default; private mode enforces bearer auth and requires a token.
   {
     const res = await call('/search', {
       method: 'POST',
@@ -148,28 +148,28 @@ try {
     });
     assert.equal(fetchRes.status, 401);
 
-    const missingTokenRes = await call('/search', {
+    const privateMissingTokenRes = await call('/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'test', provider: 'google' }),
+    }, { SEARCH_GATEWAY_MODE: 'private' });
+    assert.equal(privateMissingTokenRes.status, 503);
+    assert.equal((await privateMissingTokenRes.json()).error, 'SEARCH_GATEWAY_TOKEN is required in private mode');
+
+    const publicSearchRes = await call('/search', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ query: 'test', provider: 'google' }),
     }, {});
-    assert.equal(missingTokenRes.status, 503);
-    assert.equal((await missingTokenRes.json()).error, 'SEARCH_GATEWAY_TOKEN is required but not configured');
+    assert.equal(publicSearchRes.status, 400);
+    assert.equal((await publicSearchRes.json()).error, 'unsupported provider: google');
 
-    const openSearchRes = await call('/search', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query: 'test', provider: 'google' }),
-    }, { SEARCH_GATEWAY_ALLOW_OPEN: 'true' });
-    assert.equal(openSearchRes.status, 400);
-    assert.equal((await openSearchRes.json()).error, 'unsupported provider: google');
-
-    const openFetchRes = await call('/fetch', {
+    const publicFetchRes = await call('/fetch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url: 'not-a-url' }),
-    }, { SEARCH_GATEWAY_ALLOW_OPEN: 'true' });
-    assert.equal(openFetchRes.status, 400);
+    }, { SEARCH_GATEWAY_MODE: 'public' });
+    assert.equal(publicFetchRes.status, 400);
   }
 
   // input guardrails reject oversized/unsupported search and request payloads early.

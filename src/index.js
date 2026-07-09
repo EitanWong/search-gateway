@@ -467,17 +467,22 @@ function authConfigured(env) {
   return Boolean(env.SEARCH_GATEWAY_TOKEN);
 }
 
-function openModeAllowed(env) {
-  return String(env.SEARCH_GATEWAY_ALLOW_OPEN || "").toLowerCase() === "true";
+function configuredGatewayMode(env) {
+  const mode = String(env.SEARCH_GATEWAY_MODE || "").trim().toLowerCase();
+  if (["public", "open"].includes(mode)) return "public";
+  if (["private", "bearer", "secure"].includes(mode)) return "private";
+  if (String(env.SEARCH_GATEWAY_ALLOW_OPEN || "").toLowerCase() === "true") return "public";
+  return authConfigured(env) ? "private" : "public";
 }
 
 function authRequired(env) {
-  return authConfigured(env) || !openModeAllowed(env);
+  return configuredGatewayMode(env) === "private";
 }
 
 function isAuthorized(request, env) {
+  if (!authRequired(env)) return true;
   const expected = env.SEARCH_GATEWAY_TOKEN;
-  if (!expected) return openModeAllowed(env);
+  if (!expected) return false;
   const auth = request.headers.get("authorization") || "";
   return auth === `Bearer ${expected}`;
 }
@@ -693,16 +698,16 @@ function healthPayload(env, includeConfig = false) {
     provider_order: configuredProviders("auto", env),
     auth_configured: authConfigured(env),
     auth_required: authRequired(env),
-    auth_mode: authConfigured(env) ? "bearer" : (openModeAllowed(env) ? "open" : "misconfigured"),
-    setup: authConfigured(env) ? {
+    auth_mode: authRequired(env) ? (authConfigured(env) ? "bearer" : "private_unconfigured") : "public",
+    setup: authRequired(env) ? (authConfigured(env) ? {
       status: "secure",
-      message: "SEARCH_GATEWAY_TOKEN is configured; authenticated endpoints require Authorization: Bearer ***",
-    } : openModeAllowed(env) ? {
-      status: "explicit_open",
-      message: "SEARCH_GATEWAY_ALLOW_OPEN=true is configured; authenticated endpoints are intentionally open. Do not use this for a personal production service.",
+      message: "Private mode is enabled. Authenticated endpoints require Authorization: Bearer ***",
     } : {
-      status: "auth_not_configured",
-      message: "SEARCH_GATEWAY_TOKEN is required by default. Configure it as a Worker secret, or set SEARCH_GATEWAY_ALLOW_OPEN=true only for local/temporary development.",
+      status: "token_required",
+      message: "Private mode is enabled but SEARCH_GATEWAY_TOKEN is not configured. Add the Worker secret, or set SEARCH_GATEWAY_MODE=public for an open gateway.",
+    }) : {
+      status: "public_mode",
+      message: "Public mode is enabled. Anyone with the Worker URL can use search/fetch endpoints. For personal use, set SEARCH_GATEWAY_MODE=private and add SEARCH_GATEWAY_TOKEN.",
     },
     optional_kv_rate_limit: Boolean(env.SEARCH_RATE_LIMIT_KV || env.RATE_LIMIT_KV),
   };
@@ -1624,10 +1629,10 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
   if (request.method === "GET" && url.pathname === "/health") {
-    return json(healthPayload(env, isAuthorized(request, env) || !authConfigured(env)));
+    return json(healthPayload(env, !authRequired(env) || isAuthorized(request, env) || !authConfigured(env)));
   }
   if (authRequired(env) && !authConfigured(env)) {
-    return json(withAgentMeta({ ok: false, status: 503, error: "SEARCH_GATEWAY_TOKEN is required but not configured" }, request_id), 503);
+    return json(withAgentMeta({ ok: false, status: 503, error: "SEARCH_GATEWAY_TOKEN is required in private mode" }, request_id), 503);
   }
   if (!isAuthorized(request, env)) return json(withAgentMeta({ ok: false, status: 401, error: "unauthorized" }, request_id), 401);
   if (request.method !== "POST") return json(withAgentMeta({ ok: false, status: 405, error: "method not allowed" }, request_id), 405);

@@ -1,6 +1,6 @@
 # One-click Cloudflare deployment
 
-This repository is designed for Cloudflare's Deploy to Workers flow with **zero mandatory deploy-time configuration**. Runtime search/fetch endpoints are still secure by default: configure `SEARCH_GATEWAY_TOKEN` after deployment, or explicitly set `SEARCH_GATEWAY_ALLOW_OPEN=true` only for local/temporary development.
+This repository is designed for Cloudflare's Deploy to Workers flow with **zero mandatory deploy-time configuration**. Runtime search/fetch endpoints default to public mode for true one-click use. For long-running personal deployments, switch to private mode with `SEARCH_GATEWAY_MODE=private` and a `SEARCH_GATEWAY_TOKEN` secret.
 
 ## Deploy button
 
@@ -30,7 +30,7 @@ Expected Deploy to Workers settings:
 | Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
 | Config file | `wrangler.toml` |
-| Required deploy-time secrets | none; configure `SEARCH_GATEWAY_TOKEN` after deploy before using `/search` or `/fetch` |
+| Required deploy-time secrets | none; default public mode works immediately. Configure `SEARCH_GATEWAY_MODE=private` and `SEARCH_GATEWAY_TOKEN` later for private use. |
 
 If the dashboard asks for the repository URL manually, use the subdirectory URL:
 
@@ -40,40 +40,33 @@ https://github.com/EitanWong/search-gateway/tree/main/deploy-template
 
 ## Default auth mode
 
-The Worker is secure by default. If no `SEARCH_GATEWAY_TOKEN` secret exists, authenticated endpoints are not opened accidentally:
+The Worker deploys in public mode by default so the one-click flow is immediately usable:
 
 ```json
 {
-  "auth_mode": "misconfigured",
+  "auth_mode": "public",
   "setup": {
-    "status": "auth_not_configured"
+    "status": "public_mode"
   }
 }
 ```
 
-That means `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch` return `503` until you configure a token.
+Public mode means anyone with the Worker URL can call `/search`, `/fetch`, `/batch_fetch`, and `/search_fetch`. This is convenient for demos and quick testing.
 
-Set a Worker secret before using the endpoint:
+For long-running personal use, switch to private mode after deployment:
 
 ```bash
+# In Cloudflare Dashboard → Worker → Settings → Variables:
+# set SEARCH_GATEWAY_MODE=private
 openssl rand -hex 32
 npx wrangler secret put SEARCH_GATEWAY_TOKEN
 ```
 
-After that, requests must include:
+Private-mode requests must include:
 
 ```http
 Authorization: Bearer ***
 ```
-
-Open mode is still available for local or temporary development, but it must be explicit:
-
-```bash
-npx wrangler secret put SEARCH_GATEWAY_ALLOW_OPEN
-# enter: true
-```
-
-Do not use open mode for a personal production service.
 
 ## Optional provider configuration
 
@@ -96,11 +89,10 @@ Public health check:
 curl https://<your-worker>.<your-subdomain>.workers.dev/health
 ```
 
-Bearer-auth search:
+Public-mode search:
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/search \
-  -H "Authorization: Bearer $SEARCH_GATEWAY_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query":"Cloudflare Workers docs","limit":3,"provider":"auto"}'
 ```
