@@ -64,7 +64,7 @@ Default values:
 One-click template URL:
 
 ```text
-https://github.com/EitanWong/search-gateway
+https://github.com/EitanWong/search-gateway.git
 ```
 
 ## GitHub deployment workflow

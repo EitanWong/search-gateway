@@ -5,7 +5,7 @@ This repository is designed for Cloudflare's Deploy to Workers flow with **zero 
 ## Deploy button
 
 ```md
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway.git)
 ```
 
 The button opens Cloudflare's Workers deploy flow and imports this public GitHub repository.
@@ -24,7 +24,7 @@ Expected Deploy to Workers settings:
 
 | Setting | Expected value |
 |---|---|
-| Repository | `https://github.com/EitanWong/search-gateway` |
+| Repository | `https://github.com/EitanWong/search-gateway.git` |
 | Worker name | `search-gateway` |
 | Install command | `npm ci` |
 | Build command | `npm run build` |
@@ -35,7 +35,7 @@ Expected Deploy to Workers settings:
 If the dashboard asks for the repository URL manually, use the repository root URL:
 
 ```text
-https://github.com/EitanWong/search-gateway
+https://github.com/EitanWong/search-gateway.git
 ```
 
 ## Default auth mode
@@ -111,7 +111,7 @@ If you do not use the button:
 
 1. Go to Cloudflare Dashboard → Workers & Pages.
 2. Create application / Worker from GitHub repository.
-3. Enter `https://github.com/EitanWong/search-gateway`.
+3. Enter `https://github.com/EitanWong/search-gateway.git`.
 4. Use `wrangler.toml` if the dashboard asks for a config file.
 5. Install command: `npm ci`.
 6. Build command: `npm run build`.

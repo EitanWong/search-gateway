@@ -2,7 +2,7 @@
 
 Cloudflare Worker search/fetch gateway for agents running in restricted networks.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/EitanWong/search-gateway.git)
 
 The local agent talks to one stable endpoint; the Worker handles provider choice, caching, and page fetching. The Deploy to Cloudflare button imports the Worker with zero mandatory deploy-time fields, while runtime search/fetch endpoints are secure by default: set `SEARCH_GATEWAY_TOKEN` after deployment, or explicitly opt into development-only open mode with `SEARCH_GATEWAY_ALLOW_OPEN=true`.
 
