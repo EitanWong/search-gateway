@@ -34,6 +34,8 @@ assert.match(deploy, /CLOUDFLARE_AUTO_DEPLOY/);
 assert.match(deploy, /CLOUDFLARE_ACCOUNT_ID/);
 assert.match(deploy, /CLOUDFLARE_API_TOKEN/);
 assert.match(deploy, /npm run build && npm run dry-run/);
+assert.match(deploy, /Smoke test deployed Worker/);
+assert.match(deploy, /\/health/);
 assert.match(update, /PRESERVE_WRANGLER/);
 assert.match(update, /LOCAL_PACKAGE_NAME/);
 assert.match(update, /persist-credentials: false/);

@@ -54,7 +54,22 @@ jobs:
         run: npm run build && npm run dry-run
 
       - name: Deploy
-        run: npm run deploy
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_OUTPUT="$(npm run deploy 2>&1 | tee /dev/stderr)"
+          WORKER_URL="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -Eo 'https://[^[:space:]]+\.workers\.dev' | tail -n 1)"
+          test -n "$WORKER_URL" || { echo 'Could not find a Workers.dev URL in Wrangler deploy output.' >&2; exit 1; }
+          echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Smoke test deployed Worker
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --retry 5 --retry-all-errors --connect-timeout 10 "$WORKER_URL/health" \
+            | node -e 'let body = ""; process.stdin.on("data", (chunk) => body += chunk).on("end", () => { const health = JSON.parse(body); if (!health.ok || health.service !== "search-gateway") process.exit(1); console.log(`Healthy: ${health.service} ${health.version}`); });'
