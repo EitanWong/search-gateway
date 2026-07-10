@@ -77,13 +77,19 @@ https://github.com/EitanWong/search-gateway/tree/main/deploy-template
 
 ## GitHub deployment workflow
 
-The repository includes `.github/workflows/deploy-cloudflare.yml` for manual deployment from GitHub Actions.
-It is intentionally `workflow_dispatch`-only so fresh forks and public imports do not fail on every push before Cloudflare credentials are configured.
+The upstream repository keeps its maintainer deployment workflow manual. Generated deployment repositories include a separate workflow that always validates pull requests and can deploy the default branch only after explicit opt-in.
 
-Before running it, configure these GitHub repository secrets:
+Configure these GitHub repository settings in the generated repository:
 
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
+| Setting | Kind | Value |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | Actions secret | A dedicated least-privilege Cloudflare token with permission to edit this account's Worker scripts. |
+| `CLOUDFLARE_ACCOUNT_ID` | Actions variable | Your Cloudflare account ID. |
+| `CLOUDFLARE_AUTO_DEPLOY` | Actions variable | Set to `true` to deploy validated changes on the default branch. Leave unset for manual-only deployment. |
+
+The deploy workflow runs `npm ci`, `npm run build`, and `npm run dry-run` before `npm run deploy`. It never receives runtime bearer or provider secrets.
+
+If Cloudflare's import flow created the deployment repository without `.github/workflows`, run `npm run bootstrap:github-actions` in a clone of that generated repository, review the generated workflows, and commit them. The bootstrap script is part of the non-hidden deployment template specifically for this importer behavior.
 
 Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are optional and configured on the Cloudflare Worker. Use `SEARCH_GATEWAY_TOKEN` when `SEARCH_GATEWAY_MODE=private`.
 

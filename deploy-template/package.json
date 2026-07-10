@@ -4,7 +4,8 @@
   "private": true,
   "description": "Cloudflare Worker search/fetch gateway template.",
   "scripts": {
-    "build": "node --check src/index.js",
+    "build": "node --check src/index.js && node --check scripts/bootstrap-github-actions.mjs",
+    "bootstrap:github-actions": "node scripts/bootstrap-github-actions.mjs",
     "deploy": "wrangler deploy",
     "dry-run": "wrangler deploy --dry-run --outdir dist"
   },

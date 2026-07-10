@@ -3,12 +3,8 @@ name: Update from upstream
 on:
   workflow_dispatch:
     inputs:
-      upstream_repository:
-        description: Upstream owner/repo to sync from
-        required: true
-        default: EitanWong/search-gateway
       upstream_ref:
-        description: Upstream branch, tag, or commit
+        description: Upstream branch, tag, or commit (resolved to an immutable SHA before sync)
         required: true
         default: main
       preserve_wrangler:
@@ -38,15 +34,28 @@ jobs:
     steps:
       - name: Checkout deployment repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Resolve update inputs
+      - name: Resolve upstream commit
         run: |
           set -euo pipefail
-          echo "UPSTREAM_REPOSITORY=${UPSTREAM_REPOSITORY:-EitanWong/search-gateway}" >> "$GITHUB_ENV"
           echo "UPSTREAM_REF=${UPSTREAM_REF:-main}" >> "$GITHUB_ENV"
+          if printf '%s' "${UPSTREAM_REF:-main}" | grep -Eq '^[0-9a-f]{40}$'; then
+            UPSTREAM_SHA="${UPSTREAM_REF:-main}"
+          else
+            UPSTREAM_SHA=$(git ls-remote https://github.com/EitanWong/search-gateway.git \
+              "refs/heads/${UPSTREAM_REF:-main}" \
+              "refs/tags/${UPSTREAM_REF:-main}^{}" \
+              "refs/tags/${UPSTREAM_REF:-main}" | awk 'NR == 1 { print $1 }')
+          fi
+          if ! printf '%s' "$UPSTREAM_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Could not resolve EitanWong/search-gateway@${UPSTREAM_REF:-main} to a commit SHA." >&2
+            exit 1
+          fi
+          echo "UPSTREAM_SHA=$UPSTREAM_SHA" >> "$GITHUB_ENV"
           echo "PRESERVE_WRANGLER=${PRESERVE_WRANGLER:-true}" >> "$GITHUB_ENV"
         env:
-          UPSTREAM_REPOSITORY: ${{ github.event.inputs.upstream_repository }}
           UPSTREAM_REF: ${{ github.event.inputs.upstream_ref }}
           PRESERVE_WRANGLER: ${{ github.event.inputs.preserve_wrangler }}
 
@@ -55,11 +64,11 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/search-gateway-archive /tmp/search-gateway-upstream
           mkdir -p /tmp/search-gateway-archive /tmp/search-gateway-upstream
-          curl -fsSL "https://github.com/${UPSTREAM_REPOSITORY}/archive/${UPSTREAM_REF}.tar.gz" -o /tmp/upstream.tar.gz
+          curl -fsSL "https://github.com/EitanWong/search-gateway/archive/${UPSTREAM_SHA}.tar.gz" -o /tmp/upstream.tar.gz
           tar -xzf /tmp/upstream.tar.gz -C /tmp/search-gateway-archive
           TEMPLATE_DIR=$(find /tmp/search-gateway-archive -type d -path '*/deploy-template' | head -n 1)
           if [ -z "$TEMPLATE_DIR" ]; then
-            echo "Could not find deploy-template in ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}." >&2
+            echo "Could not find deploy-template in EitanWong/search-gateway@${UPSTREAM_SHA}." >&2
             exit 1
           fi
           rsync -a "$TEMPLATE_DIR/" /tmp/search-gateway-upstream/
@@ -67,6 +76,7 @@ jobs:
       - name: Sync template files
         run: |
           set -euo pipefail
+          LOCAL_PACKAGE_NAME=$(python3 -c 'import json; print(json.load(open("package.json"))["name"])')
           rm -rf \
             /tmp/search-gateway-upstream/node_modules \
             /tmp/search-gateway-upstream/dist \
@@ -77,6 +87,25 @@ jobs:
             rm -f /tmp/search-gateway-upstream/wrangler.toml
           fi
           cp -a /tmp/search-gateway-upstream/. ./
+          LOCAL_PACKAGE_NAME="$LOCAL_PACKAGE_NAME" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          name = os.environ["LOCAL_PACKAGE_NAME"]
+          package = Path("package.json")
+          package_data = json.loads(package.read_text())
+          package_data["name"] = name
+          package.write_text(json.dumps(package_data, indent=2) + "\n")
+
+          lock = Path("package-lock.json")
+          if lock.exists():
+              lock_data = json.loads(lock.read_text())
+              lock_data["name"] = name
+              if isinstance(lock_data.get("packages", {}).get(""), dict):
+                  lock_data["packages"][""]["name"] = name
+              lock.write_text(json.dumps(lock_data, indent=2) + "\n")
+          PY
 
       - name: Check for changes
         id: changes
@@ -90,33 +119,18 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup Node.js
-        if: steps.changes.outputs.changed == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Validate updated template
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          npm ci
-          npm run build
-          npm run dry-run
-
       - name: Create update pull request
         if: steps.changes.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BRANCH="update/search-gateway-${UPSTREAM_REF//[^A-Za-z0-9._-]/-}"
+          BRANCH="update/search-gateway-${UPSTREAM_SHA:0:12}"
           CHANGED_FILES=$(git status --short | sed 's/^/- `/; s/$/`/')
           cat > /tmp/update-pr-body.md <<EOF
-          Syncs deployment template files from ${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}.
+          Syncs deployment template files from EitanWong/search-gateway@${UPSTREAM_SHA} (requested ref: ${UPSTREAM_REF}).
 
-          Validation run before opening this PR:
+          The update workflow copies files without executing upstream Node dependencies or scripts. The generated-repository CI validates this PR with:
           - npm ci
           - npm run build
           - npm run dry-run
@@ -127,19 +141,21 @@ jobs:
           Review notes:
           - By default this workflow preserves local wrangler.toml so Worker name, routes, vars, and bindings stay under your control.
           - Check upstream release notes for any required configuration changes before merging.
-          - After merge, Cloudflare's Git integration should deploy the updated Worker.
+          - After merge, the Worker deploys automatically only when this repository has opted into the deploy workflow; otherwise run **Deploy to Cloudflare Workers** manually.
+          - This workflow preserves the local package name as well as wrangler.toml, so your deployment identity remains stable.
           EOF
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git checkout -B "$BRANCH"
           git add -A
-          git commit -m "chore: update search-gateway from upstream ${UPSTREAM_REF}"
+          git commit -m "chore: update search-gateway from upstream ${UPSTREAM_SHA:0:12}"
           git push --force-with-lease origin "$BRANCH"
           gh pr create \
-            --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
+            --title "chore: update search-gateway from upstream ${UPSTREAM_SHA:0:12}" \
             --body-file /tmp/update-pr-body.md \
             --base "${GITHUB_REF_NAME}" \
             --head "$BRANCH" \
             || gh pr edit "$BRANCH" \
-              --title "chore: update search-gateway from upstream ${UPSTREAM_REF}" \
+              --title "chore: update search-gateway from upstream ${UPSTREAM_SHA:0:12}" \
               --body-file /tmp/update-pr-body.md

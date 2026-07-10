@@ -73,14 +73,12 @@ Recommended inputs:
 
 | Input | Recommended value | Why |
 |---|---|---|
-| `upstream_repository` | `EitanWong/search-gateway` | Official upstream repository. |
-| `upstream_ref` | `main` | Latest stable source. Use a tag such as `v0.1.0` only for conservative pinned updates. |
+| `upstream_ref` | `main` | The fixed official upstream is resolved to a concrete commit SHA. Use a tag such as `v0.1.0` for conservative pinned updates. |
 | `preserve_wrangler` | `true` | Keeps your Worker name, routes, variables, and bindings. |
 
 The safest default is:
 
 ```text
-upstream_repository = EitanWong/search-gateway
 upstream_ref = main
 preserve_wrangler = true
 ```
@@ -89,9 +87,9 @@ You can also do nothing and let the weekly scheduled run check upstream automati
 
 ### 4. Wait for the workflow result
 
-The workflow downloads upstream `deploy-template/`, copies template files into an update branch, validates the result, and opens a pull request. The pull request body includes a changed-files summary and the validation commands that already ran.
+The workflow resolves the fixed upstream to a concrete commit SHA, downloads that `deploy-template/`, and copies files into an update branch without running upstream Node dependencies or scripts. It then opens a pull request. The pull request body includes the source SHA and a changed-files summary.
 
-Validation before PR creation:
+Validation on the low-privilege pull-request CI:
 
 ```bash
 npm ci
@@ -102,7 +100,7 @@ npm run dry-run
 Expected result:
 
 ```text
-chore: update search-gateway from upstream main
+chore: update search-gateway from upstream <12-character-source-sha>
 ```
 
 If the workflow says **Already up to date**, no action is needed.
@@ -130,7 +128,7 @@ Wait for the green CI check before merging the update PR.
 
 Never commit secrets such as `.dev.vars`, `.env`, provider API keys, or bearer tokens.
 
-### 6. Merge and let Cloudflare deploy
+### 6. Merge and deploy through your configured mechanism
 
 After reviewing, merge the PR.
 

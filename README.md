@@ -77,7 +77,7 @@ Cloudflare template import creates your own repository; it is not a normal GitHu
 2. Run **Update from upstream**.
 3. The workflow pulls upstream `main/deploy-template`, opens a PR, and preserves your `wrangler.toml` by default.
 4. Review release notes and merge the PR.
-5. Cloudflare's Git integration deploys the merged update.
+5. Deploy through the mechanism configured by your generated repository: Cloudflare Git integration, or the opt-in GitHub Actions workflow.
 
 The default upstream is `EitanWong/search-gateway@main`. Advanced users can run the workflow against a tag or commit.
 

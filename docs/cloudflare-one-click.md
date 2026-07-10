@@ -118,13 +118,28 @@ If you do not use the button:
 
 ## GitHub Actions deployment
 
-This repository includes `.github/workflows/deploy-cloudflare.yml` for manual Cloudflare deployment from GitHub Actions.
-It is intentionally `workflow_dispatch`-only so fresh forks and public imports do not fail on every push before Cloudflare credentials are configured.
+Generated deployment repositories include CI plus an opt-in Cloudflare deploy workflow. Pull requests always run validation; automatic deployment occurs only after you explicitly set `CLOUDFLARE_AUTO_DEPLOY=true` as a GitHub Actions repository variable.
 
-To enable it, set these GitHub repository secrets:
+Configure:
 
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN` as a GitHub Actions secret. Prefer a dedicated least-privilege token limited to Worker-script deployment for this account.
+- `CLOUDFLARE_ACCOUNT_ID` as a GitHub Actions variable.
+- `CLOUDFLARE_AUTO_DEPLOY=true` as a GitHub Actions variable when you want validated default-branch pushes to deploy.
+
+Without the opt-in variable, run **Deploy to Cloudflare Workers** manually from GitHub Actions after adding the token and account ID.
+
+### Importer fallback: restore missing workflows
+
+Some Cloudflare import paths omit hidden `.github/` files when creating the generated repository. After the first deploy, check for `.github/workflows/ci.yml`. If it is absent, clone the generated repository and run the non-hidden bootstrap script that arrived with the template:
+
+```bash
+npm run bootstrap:github-actions
+git add .github/workflows
+git commit -m "chore: enable search-gateway automation"
+git push
+```
+
+The script fixes the upstream repository, resolves the requested ref to a commit SHA, and writes only missing workflow files. It will not overwrite local workflows unless called with `--force`.
 
 Worker runtime secrets such as `SEARCH_GATEWAY_TOKEN` and provider keys are configured on the Cloudflare Worker, not in this repository.
 

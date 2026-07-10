@@ -16,7 +16,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check src/index.js && node --check tests/test-worker.mjs && node --check tests/search-quality-eval.mjs && node --check tests/search-ranking-diff.mjs",
+    "check": "node --check src/index.js && node --check deploy-template/scripts/bootstrap-github-actions.mjs && node --check tests/test-worker.mjs && node --check tests/search-quality-eval.mjs && node --check tests/search-ranking-diff.mjs",
     "test": "node tests/test-worker.mjs",
     "test:search-quality": "node tests/search-quality-eval.mjs",
     "ranking:diff": "node tests/search-ranking-diff.mjs",
@@ -26,7 +26,7 @@
     "deploy": "wrangler deploy --config worker-config.toml",
     "dry-run": "wrangler deploy --config worker-config.toml --dry-run --outdir dist",
     "build": "node --check src/index.js",
-    "test:deploy-template": "cd deploy-template && npm ci && npm run dry-run"
+    "test:deploy-template": "node tests/test-deploy-template.mjs && cd deploy-template && npm ci && npm run dry-run"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
