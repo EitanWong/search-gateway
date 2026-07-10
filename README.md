@@ -22,6 +22,20 @@ A public-by-default one-click Cloudflare search/fetch gateway template for AI ag
 
 No provider key or secret is required for the first deploy.
 
+## Agent-native deployment: Codex and Claude Code
+
+Search Gateway can deploy itself through a guided agent workflow and then install a local, read-only stdio MCP for Codex CLI, Claude Code, or both. The MCP exposes `search_web`, `fetch_url`, `batch_fetch_urls`, and `search_and_fetch`; it does **not** expose Cloudflare deployment or secret-writing tools.
+
+Give a coding agent this single GitHub instruction:
+
+```text
+Read and follow https://github.com/EitanWong/search-gateway/blob/main/integrations/agent-onboarding/SKILL.md . Guide me one step at a time, deploy Search Gateway to my Cloudflare account, then configure this coding agent to use it via MCP. Never commit, print, or pass my credentials as command-line arguments.
+```
+
+The agent will first ask which client(s) and access mode you want, then separately request a least-privilege Cloudflare API token/account ID, and finally offer optional provider setup. It runs `scripts/agent-setup.mjs --dry-run` before changing Cloudflare, stores endpoint/token only in a local mode-0600 configuration file, and checks `/health` before installing the MCP.
+
+Full agent instructions: [integrations/agent-onboarding/SKILL.md](integrations/agent-onboarding/SKILL.md).
+
 ## Smoke Test
 
 After deploy, open the Worker URL in a browser. `/` returns a compact setup page.

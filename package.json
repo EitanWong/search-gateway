@@ -16,16 +16,19 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check src/index.js && node --check deploy-template/scripts/bootstrap-github-actions.mjs && node --check tests/test-worker.mjs && node --check tests/search-quality-eval.mjs && node --check tests/search-ranking-diff.mjs",
+    "check": "node --check src/index.js && node --check deploy-template/scripts/bootstrap-github-actions.mjs && node --check integrations/mcp/server.mjs && node --check scripts/agent-setup.mjs && node --check tests/test-worker.mjs && node --check tests/search-quality-eval.mjs && node --check tests/search-ranking-diff.mjs && node --check tests/test-mcp-server.mjs && node --check tests/test-agent-setup.mjs",
     "test": "node tests/test-worker.mjs",
     "test:search-quality": "node tests/search-quality-eval.mjs",
     "ranking:diff": "node tests/search-ranking-diff.mjs",
     "test:live": "node tests/live-smoke.mjs",
-    "test:ci": "npm run check && npm test && npm run test:search-quality && python3 tests/test-plugin.py && python3 -m py_compile tests/test-plugin.py && npm run dry-run && npm run test:deploy-template",
+    "test:ci": "npm run check && npm test && npm run test:search-quality && npm run test:mcp && npm run test:agent-setup && python3 tests/test-plugin.py && python3 -m py_compile tests/test-plugin.py && npm run dry-run && npm run test:deploy-template",
     "dev": "wrangler dev --config worker-config.toml --local --ip 127.0.0.1 --port 8787",
     "deploy": "wrangler deploy --config worker-config.toml",
     "dry-run": "wrangler deploy --config worker-config.toml --dry-run --outdir dist",
-    "build": "node --check src/index.js",
+    "build": "node --check src/index.js && node --check integrations/mcp/server.mjs && node --check scripts/agent-setup.mjs",
+    "agent:setup": "node scripts/agent-setup.mjs",
+    "test:mcp": "node tests/test-mcp-server.mjs",
+    "test:agent-setup": "node tests/test-agent-setup.mjs",
     "test:deploy-template": "node tests/test-deploy-template.mjs && cd deploy-template && npm ci && npm run dry-run"
   },
   "devDependencies": {
