@@ -11,11 +11,11 @@ const MAX_BATCH_JSON_BODY_CHARS = 32768;
 const MAX_QUERY_CHARS = 500;
 const MAX_URL_CHARS = 2048;
 const MAX_RERANK_DOCUMENTS = 50;
-const SEARCH_PROVIDERS = ["searxng", "zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily", "duckduckgo", "bing"];
+const SEARCH_PROVIDERS = ["searxng", "zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily", "firecrawl", "duckduckgo", "bing"];
 const RERANK_PROVIDERS = ["bocha_rerank", "cohere_rerank", "jina_rerank", "voyage_rerank", "siliconflow_rerank"];
 const SEARCH_MODES = new Set(["fast", "balanced", "thorough"]);
 const NO_KEY_PROVIDERS = new Set(["duckduckgo", "bing"]);
-const PAID_SEARCH_PROVIDERS = new Set(["zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily"]);
+const PAID_SEARCH_PROVIDERS = new Set(["zhipu", "bocha", "bocha_ai", "brave", "serper", "tavily", "firecrawl"]);
 const SUPPORTED_FRESHNESS = new Set(["none", "auto", "day", "week", "month", "year"]);
 const FETCH_MODES = new Set(["full", "text", "metadata", "chunks"]);
 const DEFAULT_CHUNK_CHARS = 1800;
@@ -774,6 +774,7 @@ function healthPayload(env, includeConfig = false) {
       zhipu_web_search_api: true,
       bocha_web_search_api: true,
       bocha_ai_search_api: true,
+      firecrawl_search_api: true,
       bocha_rerank_api: true,
       balance_api: true,
       html_search_fallbacks: ["duckduckgo", "bing"],
@@ -810,6 +811,7 @@ function healthPayload(env, includeConfig = false) {
       brave: Boolean(env.BRAVE_SEARCH_API_KEY),
       serper: Boolean(env.SERPER_API_KEY),
       tavily: Boolean(env.TAVILY_API_KEY),
+      firecrawl: Boolean(env.FIRECRAWL_API_KEY),
       duckduckgo: true,
       bing: true,
     },
@@ -1129,6 +1131,7 @@ function isProviderConfigured(provider, env) {
   if (provider === "brave") return Boolean(env.BRAVE_SEARCH_API_KEY);
   if (provider === "serper") return Boolean(env.SERPER_API_KEY);
   if (provider === "tavily") return Boolean(env.TAVILY_API_KEY);
+  if (provider === "firecrawl") return Boolean(env.FIRECRAWL_API_KEY);
   return NO_KEY_PROVIDERS.has(provider);
 }
 
@@ -1154,6 +1157,7 @@ async function searchProvider(provider, query, limit, env, options = {}) {
   if (provider === "brave") return braveSearch(query, limit, env, options);
   if (provider === "serper") return serperSearch(query, limit, env, options);
   if (provider === "tavily") return tavilySearch(query, limit, env, options);
+  if (provider === "firecrawl") return firecrawlSearch(query, limit, env, options);
   if (provider === "duckduckgo") return duckDuckGoSearch(query, limit, env, options);
   if (provider === "bing") return bingSearch(query, limit, env, options);
   throw new Error(`unsupported provider: ${provider}`);
@@ -1458,6 +1462,74 @@ async function tavilySearch(query, limit, env, options = {}) {
   }, "tavily"));
 }
 
+function firecrawlSearchUrl(env) {
+  const base = String(env.FIRECRAWL_API_URL || "").trim() || "https://api.firecrawl.dev";
+  let url;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new Error("FIRECRAWL_API_URL is invalid");
+  }
+  const existingPath = url.pathname.replace(/\/+$/, "");
+  if (existingPath.endsWith("/v2/search")) {
+    url.pathname = existingPath;
+  } else if (existingPath.endsWith("/v2")) {
+    url.pathname = `${existingPath}/search`;
+  } else {
+    url.pathname = `${existingPath || ""}/v2/search`;
+  }
+  url.search = "";
+  url.hash = "";
+  const blocked = isBlockedUrl(url.toString());
+  if (blocked) throw new Error(`FIRECRAWL_API_URL blocked: ${blocked}`);
+  if (url.protocol !== "https:") throw new Error("FIRECRAWL_API_URL must use https");
+  return url;
+}
+
+function firecrawlSearchEntries(data) {
+  const payload = data?.data && typeof data.data === "object" ? data.data : {};
+  const web = Array.isArray(payload.web) ? payload.web : [];
+  const news = Array.isArray(payload.news) ? payload.news : [];
+  return [
+    ...web.map((result) => ({
+      title: result.title || result.metadata?.title,
+      url: result.url || result.metadata?.sourceURL || result.metadata?.url,
+      snippet: result.description || result.metadata?.description,
+      published_at: result.published_at || result.publishedAt || result.date,
+      site_name: result.site_name || result.siteName,
+      image_url: result.image_url || result.imageUrl,
+    })),
+    ...news.map((result) => ({
+      title: result.title || result.metadata?.title,
+      url: result.url || result.metadata?.sourceURL || result.metadata?.url,
+      snippet: result.snippet || result.description || result.metadata?.description,
+      published_at: result.date || result.published_at || result.publishedAt,
+      site_name: result.site_name || result.siteName,
+      image_url: result.image_url || result.imageUrl,
+    })),
+  ];
+}
+
+async function firecrawlSearch(query, limit, env, options = {}) {
+  if (!env.FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY is not configured");
+  const url = firecrawlSearchUrl(env);
+  const response = await fetch(url, {
+    method: "POST",
+    redirect: "manual",
+    signal: options.signal,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${env.FIRECRAWL_API_KEY}`,
+    },
+    body: JSON.stringify({ query, limit, sources: ["web"] }),
+  });
+  if (!response.ok) throw new Error(`firecrawl search failed: ${response.status}`);
+  const data = await readJsonLimited(response, MAX_PROVIDER_JSON_BYTES, "firecrawl");
+  if (data?.success !== true) throw new Error("firecrawl search failed: unsuccessful response");
+  return firecrawlSearchEntries(data).slice(0, limit).map((result) => normalizeResult(result, "firecrawl"));
+}
+
 function parseDuckDuckGoResults(html) {
   const results = [];
   const blocks = html.match(/<div[^>]+class="[^"]*result[^"]*"[\s\S]*?(?=<div[^>]+class="[^"]*result[^"]*"|<\/body>|$)/gi) || [];
@@ -1632,6 +1704,7 @@ async function fallbackSearch(providers, context) {
           language: context.language,
           count: results.length,
           results,
+          providers_used: [provider],
           providers_attempted: [...attempted],
           cost_hints: costHints(attempted, reranked.providers_attempted),
           ...(reranked.providers_attempted.length ? { rerank_providers_attempted: reranked.providers_attempted } : {}),
@@ -1657,6 +1730,7 @@ async function fallbackSearch(providers, context) {
     error: "all search providers failed",
     provider: context.requestedProvider,
     count: 0,
+    providers_used: [],
     providers_attempted: attempted,
     cost_hints: costHints(attempted, []),
     fetched_at: new Date().toISOString(),

@@ -40,7 +40,7 @@ Do not ask for their global API key. Tell them the token is used only for this l
 
 After Cloudflare credentials are available, state:
 
-> Search works now without paid providers. Optional providers improve recall, freshness, or reranking. Pick any of: `zhipu`, `bocha`, `brave`, `serper`, `tavily`, `cohere`, `jina`, `voyage`, `siliconflow`; or say `none`.
+> Search works now without paid providers. Optional providers improve recall, freshness, or reranking. Pick any of: `zhipu`, `bocha`, `brave`, `serper`, `tavily`, `firecrawl`, `cohere`, `jina`, `voyage`, `siliconflow`; or say `none`.
 
 Ask the user to obtain each selected key from that provider’s **official** account/dashboard and provide it directly to the agent. Do not push them to a third-party key broker.
 
@@ -53,6 +53,7 @@ Map choices to setup environment names:
 | `brave` | `BRAVE_SEARCH_API_KEY` | web search |
 | `serper` | `SERPER_API_KEY` | web search |
 | `tavily` | `TAVILY_API_KEY` | web search |
+| `firecrawl` | `FIRECRAWL_API_KEY` | web search (v2 search, no implicit scrape) |
 | `cohere` | `COHERE_API_KEY` | rerank |
 | `jina` | `JINA_API_KEY` | rerank |
 | `voyage` | `VOYAGE_API_KEY` | rerank |

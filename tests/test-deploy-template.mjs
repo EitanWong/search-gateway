@@ -10,7 +10,9 @@ async function read(relativePath) {
   return readFile(join(template, relativePath), "utf8");
 }
 
-const [packageJson, gitignore, ci, deploy, update, bootstrap] = await Promise.all([
+const [sourceIndex, templateIndex, packageJson, gitignore, ci, deploy, update, bootstrap] = await Promise.all([
+  readFile(join(root, "src", "index.js"), "utf8"),
+  read("src/index.js"),
   read("package.json"),
   read(".gitignore"),
   read(".github/workflows/ci.yml"),
@@ -18,6 +20,8 @@ const [packageJson, gitignore, ci, deploy, update, bootstrap] = await Promise.al
   read(".github/workflows/update-from-upstream.yml"),
   read("scripts/bootstrap-github-actions.mjs"),
 ]);
+
+assert.equal(templateIndex, sourceIndex, "deploy-template/src/index.js must mirror src/index.js");
 
 const pkg = JSON.parse(packageJson);
 assert.equal(pkg.scripts.build, "node --check src/index.js && node --check scripts/bootstrap-github-actions.mjs");

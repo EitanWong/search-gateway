@@ -101,6 +101,7 @@ try {
     assert.equal(data.endpoints.search_fetch, '/search_fetch');
     assert.deepEqual(data.capabilities.search_modes, ['fast', 'balanced', 'thorough']);
     assert.equal(data.capabilities.canonical_dedupe, true);
+    assert.equal(data.capabilities.firecrawl_search_api, true);
     assert.equal('providers' in data, false);
     assert.equal('provider_order' in data, false);
     assert.equal('auth_configured' in data, false);
@@ -115,10 +116,19 @@ try {
     assert.equal(authedData.providers.bocha, false);
     assert.equal(authedData.providers.bocha_ai, false);
     assert.equal(authedData.providers.brave, true);
+    assert.equal(authedData.providers.firecrawl, false);
     assert.deepEqual(authedData.provider_order, ['brave', 'serper', 'tavily', 'duckduckgo', 'bing']);
     assert.equal(authedData.auth_configured, true);
     assert.equal(authedData.auth_required, true);
     assert.equal(authedData.auth_mode, 'bearer');
+
+    const firecrawlHealth = await call('/health', {
+      method: 'GET',
+      headers: { authorization: 'Bearer dev-token' },
+    }, { ...env, FIRECRAWL_API_KEY: 'firecrawl-key' });
+    const firecrawlHealthData = await firecrawlHealth.json();
+    assert.equal(firecrawlHealthData.providers.firecrawl, true);
+    assert.deepEqual(firecrawlHealthData.provider_order, ['brave', 'serper', 'tavily', 'firecrawl', 'duckduckgo', 'bing']);
 
     const publicHealth = await call('/health', {}, {});
     assert.equal(publicHealth.status, 200);
@@ -715,6 +725,130 @@ try {
     assert.equal(typeof data.results[0].retrieved_at, 'string');
   }
 
+  // Firecrawl Search v2 is a first-class paid provider and keeps the default call in search-only mode.
+  {
+    mockFetch(async (input, init) => {
+      const url = String(input.url || input);
+      assert.equal(url, 'https://firecrawl.test/gateway/v2/search');
+      assert.equal(init.method, 'POST');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.headers.authorization, 'Bearer firecrawl-token');
+      assert.equal(init.headers.accept, 'application/json');
+      assert.equal(init.headers['content-type'], 'application/json');
+      assert.deepEqual(JSON.parse(init.body), {
+        query: 'Firecrawl Search API',
+        limit: 3,
+        sources: ['web'],
+      });
+      return jsonResponse({
+        success: true,
+        data: {
+          web: [
+            {
+              title: 'Firecrawl web result',
+              description: 'Normalized web description',
+              url: 'https://firecrawl-web.test/a?utm_source=partner#top',
+              imageUrl: 'https://firecrawl-web.test/cover.png?utm_campaign=x',
+            },
+            {
+              metadata: {
+                title: 'Firecrawl metadata fallback',
+                description: 'Metadata description',
+                sourceURL: 'https://firecrawl-web.test/metadata?fbclid=x',
+              },
+            },
+          ],
+          news: [
+            {
+              title: 'Firecrawl news result',
+              snippet: 'Normalized news snippet',
+              url: 'https://firecrawl-news.test/a',
+              date: '2026-07-10',
+              imageUrl: 'http://169.254.169.254/latest/meta-data',
+            },
+            {
+              title: 'Result beyond request limit',
+              snippet: 'must not be returned',
+              url: 'https://firecrawl-news.test/ignored',
+            },
+          ],
+        },
+      });
+    });
+
+    const firecrawlEnv = {
+      SEARCH_GATEWAY_TOKEN: 'dev-token',
+      FIRECRAWL_API_KEY: 'firecrawl-token',
+      FIRECRAWL_API_URL: 'https://firecrawl.test/gateway/',
+    };
+    const res = await post('/search', { query: 'Firecrawl Search API', provider: 'firecrawl', limit: 3, rerank: false }, firecrawlEnv);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.provider, 'firecrawl');
+    assert.deepEqual(data.providers_attempted, ['firecrawl']);
+    assert.deepEqual(data.providers_used, ['firecrawl']);
+    assert.equal(data.cost_hints.paid_search_calls, 1);
+    assert.equal(data.count, 3);
+    assert.equal(data.results[0].canonical_url, 'https://firecrawl-web.test/a');
+    assert.equal(data.results[0].snippet, 'Normalized web description');
+    assert.equal(data.results[0].image_url, 'https://firecrawl-web.test/cover.png');
+    assert.equal(data.results[1].title, 'Firecrawl metadata fallback');
+    assert.equal(data.results[1].canonical_url, 'https://firecrawl-web.test/metadata');
+    assert.equal(data.results[2].snippet, 'Normalized news snippet');
+    assert.equal(data.results[2].published_at, '2026-07-10T00:00:00.000Z');
+    assert.equal(data.results[2].image_url, '');
+  }
+
+  // Firecrawl custom endpoints are SSRF-guarded before the Worker sends a provider bearer token.
+  {
+    for (const [endpoint, expected] of [
+      ['not-a-url', /FIRECRAWL_API_URL is invalid/],
+      ['https://user:pass@firecrawl.test', /FIRECRAWL_API_URL blocked: credentials in URLs are blocked/],
+      ['http://firecrawl.test', /FIRECRAWL_API_URL must use https/],
+      ['http://127.0.0.1:3002', /FIRECRAWL_API_URL blocked: private IP blocked/],
+      ['http://[::1]', /FIRECRAWL_API_URL blocked: private IP blocked/],
+    ]) {
+      let calls = 0;
+      mockFetch(async () => {
+        calls += 1;
+        throw new Error('fetch should not run for an unsafe Firecrawl endpoint');
+      });
+      const res = await post('/search', { query: 'firecrawl endpoint safety', provider: 'firecrawl', limit: 3 }, {
+        SEARCH_GATEWAY_TOKEN: 'dev-token',
+        FIRECRAWL_API_KEY: 'firecrawl-token',
+        FIRECRAWL_API_URL: endpoint,
+      });
+      assert.equal(res.status, 502);
+      const data = await res.json();
+      assert.equal(data.ok, false);
+      assert.equal(calls, 0);
+      assert.match(data.warnings[0], expected);
+    }
+  }
+
+  // Firecrawl surfaces unsuccessful API envelopes and HTTP failures through normal provider diagnostics.
+  {
+    mockFetch(async (input) => {
+      assert.equal(String(input.url || input), 'https://api.firecrawl.dev/v2/search');
+      return jsonResponse({ success: false, error: 'upstream detail omitted' });
+    });
+    const unsuccessful = await post('/search', { query: 'firecrawl failure', provider: 'firecrawl', limit: 3 }, {
+      SEARCH_GATEWAY_TOKEN: 'dev-token',
+      FIRECRAWL_API_KEY: 'firecrawl-token',
+    });
+    assert.equal(unsuccessful.status, 502);
+    assert.match((await unsuccessful.json()).warnings[0], /firecrawl search failed: unsuccessful response/);
+
+    mockFetch(async () => jsonResponse({}, { status: 503 }));
+    const unavailable = await post('/search', { query: 'firecrawl unavailable', provider: 'firecrawl', limit: 3 }, {
+      SEARCH_GATEWAY_TOKEN: 'dev-token',
+      FIRECRAWL_API_KEY: 'firecrawl-token',
+    });
+    assert.equal(unavailable.status, 502);
+    assert.match((await unavailable.json()).warnings[0], /firecrawl search failed: 503/);
+  }
+
   // Zhipu Web Search API is a first-class provider and maps search_result entries into normalized results.
   {
     mockFetch(async (input, init) => {
@@ -1059,11 +1193,13 @@ try {
     assert.match(data.warnings[0], /DUCKDUCKGO_ENDPOINT blocked: private IP blocked/);
   }
 
-  // auto provider selection works with zero paid keys and keeps Bocha AI Search opt-in for cost safety.
+  // auto provider selection works with zero paid keys, keeps Firecrawl behind existing paid search priority, and keeps Bocha AI Search opt-in for cost safety.
   {
     assert.deepEqual(_test.configuredProviders('auto', {}), ['duckduckgo', 'bing']);
     assert.deepEqual(_test.configuredProviders('auto', { SEARXNG_URL: 'https://searx.test' }), ['searxng', 'duckduckgo', 'bing']);
     assert.deepEqual(_test.configuredProviders('auto', { ZHIPU_API_KEY: 'zhipu-token', BOCHA_API_KEY: 'bocha-token' }), ['zhipu', 'bocha', 'duckduckgo', 'bing']);
+    assert.deepEqual(_test.configuredProviders('auto', { FIRECRAWL_API_KEY: 'firecrawl-token' }), ['firecrawl', 'duckduckgo', 'bing']);
+    assert.deepEqual(_test.configuredProviders('auto', { TAVILY_API_KEY: 'tavily-token', FIRECRAWL_API_KEY: 'firecrawl-token' }), ['tavily', 'firecrawl', 'duckduckgo', 'bing']);
     assert.deepEqual(_test.configuredProviders('auto', { BOCHA_API_KEY: 'bocha-token' }, { includeBochaAi: true }), ['bocha', 'bocha_ai', 'duckduckgo', 'bing']);
     assert.deepEqual(_test.configuredProviders('bocha_ai', { BOCHA_API_KEY: 'bocha-token' }), ['bocha_ai']);
   }

@@ -15,6 +15,7 @@ const PROVIDERS = {
   brave: "BRAVE_SEARCH_API_KEY",
   serper: "SERPER_API_KEY",
   tavily: "TAVILY_API_KEY",
+  firecrawl: "FIRECRAWL_API_KEY",
   cohere: "COHERE_API_KEY",
   jina: "JINA_API_KEY",
   voyage: "VOYAGE_API_KEY",
@@ -28,7 +29,7 @@ const HELP = `Usage:
 Options:
   --mode public|private       Worker access mode (default: private)
   --agent codex|claude|both   Install MCP configuration for these clients (default: both)
-  --provider NAME[,NAME]      Optional: zhipu, bocha, brave, serper, tavily, cohere, jina, voyage, siliconflow, duckduckgo
+  --provider NAME[,NAME]      Optional: zhipu, bocha, brave, serper, tavily, firecrawl, cohere, jina, voyage, siliconflow, duckduckgo
   --replace-agent             Replace an existing search-gateway MCP configuration
   --no-install                Deploy/configure Worker but do not install an MCP client configuration
   --dry-run                   Validate inputs and print a secret-free plan without side effects
@@ -40,7 +41,7 @@ Required environment variables:
 
 Optional secret environment variables:
   SEARCH_GATEWAY_TOKEN        Private Worker token; generated locally when omitted
-  ZHIPU_API_KEY, BOCHA_API_KEY, BRAVE_SEARCH_API_KEY, SERPER_API_KEY, TAVILY_API_KEY,
+  ZHIPU_API_KEY, BOCHA_API_KEY, BRAVE_SEARCH_API_KEY, SERPER_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY,
   COHERE_API_KEY, JINA_API_KEY, VOYAGE_API_KEY, SILICONFLOW_API_KEY
 `;
 

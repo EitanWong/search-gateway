@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add Firecrawl Search v2 as an optional paid provider with explicit `provider: "firecrawl"`, configured `auto` participation, bounded JSON parsing, endpoint SSRF guardrails, and synchronized agent/setup schemas.
 - Add `docs/updating.md` with step-by-step generated-repo updater workflow guidance, expected GitHub UI states, PR review checks, and troubleshooting.
 - Expand rate-limit documentation with Cloudflare Dashboard KV namespace and Worker binding setup steps.
 - Add `docs/release-template.md` to standardize `0.1.x` release notes and upgrade guidance.

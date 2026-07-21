@@ -29,6 +29,7 @@ const help = await run(['--help']);
 assert.equal(help.status, 0);
 assert.match(help.stdout, /--worker-name/);
 assert.match(help.stdout, /--mode public\|private/);
+assert.match(help.stdout, /firecrawl/);
 
 const tmp = await mkdtemp(join(tmpdir(), 'search-gateway-setup-'));
 try {
@@ -39,12 +40,13 @@ try {
     CLOUDFLARE_ACCOUNT_ID: 'cf-account',
     SEARCH_GATEWAY_TOKEN: 'gateway-token',
     BRAVE_SEARCH_API_KEY: 'brave-secret',
+    FIRECRAWL_API_KEY: 'firecrawl-secret',
   };
   const dryRun = await run([
     '--worker-name', 'sg-test',
     '--mode', 'private',
     '--agent', 'both',
-    '--provider', 'brave,duckduckgo',
+    '--provider', 'brave,firecrawl,duckduckgo',
     '--dry-run',
   ], env);
 
@@ -52,10 +54,19 @@ try {
   assert.match(dryRun.stdout, /Dry run plan/);
   assert.match(dryRun.stdout, /sg-test/);
   assert.match(dryRun.stdout, /SEARCH_GATEWAY_MODE:private/);
+  assert.match(dryRun.stdout, /FIRECRAWL_API_KEY/);
   assert.match(dryRun.stdout, /codex mcp add/);
   assert.match(dryRun.stdout, /claude mcp add -s user/);
-  assert.doesNotMatch(dryRun.stdout + dryRun.stderr, /gateway-token|brave-secret|cf-token/);
+  assert.doesNotMatch(dryRun.stdout + dryRun.stderr, /gateway-token|brave-secret|firecrawl-secret|cf-token/);
   assert.equal(existsSync(join(configHome, 'search-gateway', 'config.json')), false);
+
+  const missingFirecrawl = await run([
+    '--worker-name', 'sg-test',
+    '--provider', 'firecrawl',
+    '--dry-run',
+  ], { ...env, FIRECRAWL_API_KEY: '' });
+  assert.equal(missingFirecrawl.status, 1);
+  assert.match(missingFirecrawl.stderr, /FIRECRAWL_API_KEY is required/);
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }

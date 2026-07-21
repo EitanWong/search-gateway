@@ -23,6 +23,7 @@ Do not commit real credentials. Use Cloudflare Worker secrets for:
 - `BRAVE_SEARCH_API_KEY`
 - `SERPER_API_KEY`
 - `TAVILY_API_KEY`
+- `FIRECRAWL_API_KEY`
 
 Local `.dev.vars`, `.env`, `.wrangler/`, `dist/`, and `.release-loop/` are ignored.
 

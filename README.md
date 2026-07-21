@@ -132,6 +132,8 @@ Configure non-sensitive options as Cloudflare Variables and sensitive values as 
 | `BRAVE_SEARCH_API_KEY` | Secret | unset | API key | Optional Brave Search provider. |
 | `SERPER_API_KEY` | Secret | unset | API key | Optional Serper provider. |
 | `TAVILY_API_KEY` | Secret | unset | API key | Optional Tavily provider. |
+| `FIRECRAWL_API_KEY` | Secret | unset | API key | Optional Firecrawl Search v2 provider. |
+| `FIRECRAWL_API_URL` | Variable | `https://api.firecrawl.dev` | API base URL | Optional Firecrawl **HTTPS** API base URL. Root, `/v2`, and `/v2/search` forms are accepted; HTTP, URL credentials, and private literal hosts are blocked. |
 | `DUCKDUCKGO_ENDPOINT` | Variable | `https://html.duckduckgo.com/html/` | URL | DuckDuckGo HTML endpoint override. Usually leave unchanged. |
 | `DUCKDUCKGO_LANGUAGE` | Variable | `en-US` | locale | DuckDuckGo fallback language hint. |
 | `BING_MARKET` | Variable | `en-US` | market | Bing fallback market. |
@@ -170,9 +172,11 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 }
 ```
 
-Providers: `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing`.
+Providers: `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `firecrawl`, `duckduckgo`, `bing`.
 
 `bocha` uses Bocha Web Search (`/v1/web-search`) for Bing-compatible web results. `bocha_ai` uses Bocha AI Search (`/v1/ai-search`) and extracts `source/webpage` messages into the same normalized result schema; modal cards, generated answers, and follow-up questions are intentionally ignored by `/search` for compatibility. For cost safety, `provider: "auto"` does not include `bocha_ai` unless `mode: "thorough"`; request `provider: "bocha_ai"` explicitly when you want AI Search.
+
+`firecrawl` calls Firecrawl Search v2 with `sources: ["web"]` and normalizes returned web/news entries into the gateway result schema. It deliberately does **not** send Firecrawl `scrapeOptions`, so enabling this provider does not silently turn ordinary search into per-result page scraping. It participates in `auto` only when `FIRECRAWL_API_KEY` is configured.
 
 Bocha pricing and quota planning notes are in [docs/bocha-pricing.md](docs/bocha-pricing.md). In particular, Tier 0 accounts are limited to `1 QPS`, `30 QPM`, and `1000 QPD`; use `SEARCH_RATE_LIMIT_PER_MINUTE` and Cloudflare rate limiting for public deployments.
 

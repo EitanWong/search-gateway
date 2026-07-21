@@ -95,7 +95,7 @@ SEARCH_SCHEMA = {
     "properties": {
         "query": {"type": "string", "description": "Search query."},
         "limit": {"type": "integer", "description": "Max results, default 8, max 20."},
-        "provider": {"type": "string", "description": "auto, searxng, zhipu, bocha, bocha_ai, brave, serper, tavily, duckduckgo, or bing. Default auto. `auto` works even with zero paid provider keys via DuckDuckGo/Bing HTML fallback."},
+        "provider": {"type": "string", "description": "auto, searxng, zhipu, bocha, bocha_ai, brave, serper, tavily, firecrawl, duckduckgo, or bing. Default auto. `auto` works even with zero paid provider keys via DuckDuckGo/Bing HTML fallback."},
         "mode": {"type": "string", "description": "fast, balanced, or thorough. Default balanced. fast is sequential/no implicit rerank; balanced parallelizes the first provider wave without implicit rerank; thorough aggregates all configured providers and may rerank."},
         "freshness": {"type": "string", "description": "none, auto, day, week, month, or year. Default none. auto detects recency intent from the query."},
         "language": {"type": "string", "description": "auto, zh-CN, en-US, or provider-supported locale/market. Default auto."},

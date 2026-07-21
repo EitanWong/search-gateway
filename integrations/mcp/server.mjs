@@ -61,7 +61,7 @@ const searchSchema = {
   properties: {
     query: { type: "string", description: "Search query." },
     limit: { type: "integer", description: "Max results, default 8, max 20." },
-    provider: { type: "string", description: "auto, searxng, zhipu, bocha, bocha_ai, brave, serper, tavily, duckduckgo, or bing. Default auto." },
+    provider: { type: "string", description: "auto, searxng, zhipu, bocha, bocha_ai, brave, serper, tavily, firecrawl, duckduckgo, or bing. Default auto." },
     mode: { type: "string", description: "fast, balanced, or thorough. Default balanced." },
     freshness: { type: "string", description: "none, auto, day, week, month, or year. Default none." },
     language: { type: "string", description: "auto, zh-CN, en-US, or provider-supported locale/market. Default auto." },

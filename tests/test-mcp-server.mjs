@@ -110,6 +110,7 @@ try {
       'search_and_fetch',
     ]);
     assert.equal(tools.find((tool) => tool.name === 'search_web').inputSchema.properties.limit.description, 'Max results, default 8, max 20.');
+    assert.match(tools.find((tool) => tool.name === 'search_web').inputSchema.properties.provider.description, /firecrawl/);
     assert.equal(tools.find((tool) => tool.name === 'fetch_url').inputSchema.properties.mode.enum.includes('chunks'), true);
 
     const called = await mcp.request('tools/call', {

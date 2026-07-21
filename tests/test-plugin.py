@@ -161,6 +161,37 @@ def test_search_and_fetch_tool_exposes_and_maps_fields():
 
 
 
+def test_search_schema_advertises_and_forwards_firecrawl():
+    plugin = load_plugin()
+    calls = []
+
+    def fake_post(path, payload, timeout=plugin.DEFAULT_TIMEOUT):
+        calls.append({"path": path, "payload": payload, "timeout": timeout})
+        return {"ok": True, "echo": payload}
+
+    setattr(plugin, "_post", fake_post)
+    ctx = FakeCtx()
+    plugin.register(ctx)
+    assert "firecrawl" in ctx.tools["search_web"]["schema"]["properties"]["provider"]["description"]
+    result = json.loads(ctx.tools["search_web"]["handler"]({
+        "query": "Firecrawl Search API",
+        "provider": "firecrawl",
+    }))
+    assert result["ok"] is True
+    assert calls == [{
+        "path": "/search",
+        "payload": {
+            "query": "Firecrawl Search API",
+            "limit": 8,
+            "provider": "firecrawl",
+            "mode": "balanced",
+            "freshness": "none",
+            "language": "auto",
+        },
+        "timeout": plugin.DEFAULT_TIMEOUT,
+    }]
+
+
 def test_post_allows_public_mode_and_sends_optional_bearer_header():
     plugin = load_plugin()
     seen = []
@@ -245,6 +276,7 @@ def main():
         test_fetch_handler_passes_agent_native_fields,
         test_batch_fetch_tool_exposes_and_maps_shared_fields,
         test_search_and_fetch_tool_exposes_and_maps_fields,
+        test_search_schema_advertises_and_forwards_firecrawl,
         test_post_allows_public_mode_and_sends_optional_bearer_header,
         test_http_error_preserves_gateway_body_top_level,
         test_tool_descriptions_teach_agent_workflow,

@@ -71,10 +71,10 @@ Authorization: Bearer <token>
 With `provider: "auto"`, configured providers are tried before no-key fallbacks:
 
 ```text
-SearXNG → Zhipu → Bocha Web → Brave → Serper → Tavily → DuckDuckGo HTML → Bing HTML
+SearXNG → Zhipu → Bocha Web → Brave → Serper → Tavily → Firecrawl → DuckDuckGo HTML → Bing HTML
 ```
 
-If no paid provider keys are configured, the gateway still works through DuckDuckGo/Bing HTML where reachable. Bocha AI Search is costlier than Bocha Web Search, so `bocha_ai` stays opt-in for normal `auto` searches and is included automatically only in `mode: "thorough"`.
+If no paid provider keys are configured, the gateway still works through DuckDuckGo/Bing HTML where reachable. Bocha AI Search is costlier than Bocha Web Search, so `bocha_ai` stays opt-in for normal `auto` searches and is included automatically only in `mode: "thorough"`. Firecrawl is placed after the existing paid search providers, before no-key fallbacks, so adding its key does not change the normal balanced first wave when the earlier providers are already configured.
 
 | Name | Type | Required? | Description |
 |---|---|---:|---|
@@ -105,6 +105,8 @@ If no paid provider keys are configured, the gateway still works through DuckDuc
 | `BRAVE_SEARCH_API_KEY` | Secret | Optional | Brave Search API key. Enables `provider: "brave"` and participates in `auto`. |
 | `SERPER_API_KEY` | Secret | Optional | Serper API key. Enables `provider: "serper"` and participates in `auto`. |
 | `TAVILY_API_KEY` | Secret | Optional | Tavily API key. Enables `provider: "tavily"` and participates in `auto`. |
+| `FIRECRAWL_API_KEY` | Secret | Optional | Firecrawl API key. Enables `provider: "firecrawl"` and participates in `auto`. The Worker calls Firecrawl Search v2 without `scrapeOptions`, so it returns search results rather than implicitly scraping each result. |
+| `FIRECRAWL_API_URL` | Variable | Optional | Firecrawl **HTTPS** API base URL. Default: `https://api.firecrawl.dev`. A root URL, `/v2`, or exact `/v2/search` endpoint is accepted. HTTP URLs, URL credentials, and private literal hosts are rejected before the Worker sends the bearer key. |
 | `DUCKDUCKGO_ENDPOINT` | Variable | Optional | DuckDuckGo HTML endpoint override. Default: `https://html.duckduckgo.com/html/`. Usually do not change this. |
 | `DUCKDUCKGO_LANGUAGE` | Variable | Optional | DuckDuckGo/Bing language fallback. Default template value: `en-US`. |
 | `BING_MARKET` | Variable | Optional | Bing market/language fallback. Default template value: `en-US`. |
@@ -260,7 +262,7 @@ Private mode without token:
 |---|---|---|---|
 | `query` | required | string | Search query. Max 500 chars. |
 | `limit` | `8` | 1–20 | Max results. |
-| `provider` | `auto` | `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `duckduckgo`, `bing` | Provider to use. |
+| `provider` | `auto` | `auto`, `searxng`, `zhipu`, `bocha`, `bocha_ai`, `brave`, `serper`, `tavily`, `firecrawl`, `duckduckgo`, `bing` | Provider to use. |
 | `mode` | `balanced` | `fast`, `balanced`, `thorough` | Search execution mode. `fast` is sequential and disables implicit rerank; `balanced` parallelizes the first provider wave without implicit rerank; `thorough` aggregates all configured providers and reranks when configured. |
 | `freshness` | `none` | `none`, `auto`, `day`, `week`, `month`, `year` | Recency hint. `auto` detects news/latest intent. |
 | `language` | `auto` | `auto`, `zh-CN`, `en-US`, provider-supported values | Language/market hint. |
@@ -396,6 +398,7 @@ BOCHA_API_KEY=<secret>
 BRAVE_SEARCH_API_KEY=<secret>
 SERPER_API_KEY=<secret>
 TAVILY_API_KEY=<secret>
+FIRECRAWL_API_KEY=<secret>
 ```
 
 ### Self-hosted SearXNG first

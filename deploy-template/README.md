@@ -70,6 +70,7 @@ For higher quality, add one or more provider secrets in Cloudflare:
 | `BRAVE_SEARCH_API_KEY` | Brave Search API |
 | `SERPER_API_KEY` | Google-style Serper API |
 | `TAVILY_API_KEY` | Tavily Search API |
+| `FIRECRAWL_API_KEY` | Firecrawl Search v2 API |
 
 For self-hosted SearXNG:
 

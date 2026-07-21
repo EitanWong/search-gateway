@@ -85,6 +85,7 @@ npx wrangler secret put SILICONFLOW_API_KEY
 npx wrangler secret put BRAVE_SEARCH_API_KEY
 npx wrangler secret put SERPER_API_KEY
 npx wrangler secret put TAVILY_API_KEY
+npx wrangler secret put FIRECRAWL_API_KEY
 ```
 
 ## Post-deploy health check
